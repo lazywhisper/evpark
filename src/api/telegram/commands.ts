@@ -14,6 +14,7 @@ const HELP = `Привет! Я ищу BMW E39 facelift на av.by, onliner.by, a
 /pause — поставить на паузу
 /resume — снять с паузы
 /stats — статистика за неделю
+/bootstrap_av — обход только av.by (быстрее)
 /reset — очистить базу и начать сначала (только для владельца)
 /help — эта справка`;
 
@@ -55,6 +56,11 @@ export async function handleCommand(env: Env, d: DB, chatId: string, username: s
         await env.QUEUE_FETCH.send({ kind: "scan", source: s, mode: "daily" });
       }
       await sendMessage(env, chatId, "Запустил сканирование. Жди уведомлений в течение нескольких минут.");
+      return;
+    }
+    case "/bootstrap_av": {
+      await env.QUEUE_FETCH.send({ kind: "scan", source: "av", mode: "bootstrap" });
+      await sendMessage(env, chatId, "Запустил bootstrap только av.by (~600 объявлений).");
       return;
     }
     case "/bootstrap": {
