@@ -6,22 +6,29 @@ import type { NormalizedListing, RawPhoto, ScanResult, SourceParser } from "./ty
 
 // av.by защищён Cloudflare Bot Management. Прямой fetch с CF Workers получает
 // 503/468. JSON-эндпоинт /api/v1/items больше не отдаёт listing'и для нашего
-// поколения, но публичная HTML-страница `/bmw/5-seriya/<gen-slug>` отдаёт
-// 24 карточки на страницу с микроразметкой schema.org + классами
-// listing-item__*. Парсим её через ScrapFly (asp=true).
+// поколения, но HTML-страница `/filter?brands[0][brand]=8&...&page=N` отдаёт
+// 24 карточки на страницу с разметкой listing-item__*. Парсим через ScrapFly.
 //
-// Cursor format: "<slug>:<page>". Bootstrap идёт facelift → pre-facelift.
+// SEO-URL `/bmw/5-seriya/e39-restajling-2000-2004` параметр page игнорирует —
+// нужен именно `/filter?...&page=N`.
+//
+// Cursor format: "<gen>:<page>". Bootstrap идёт facelift → pre-facelift.
 // Daily — только первая страница facelift.
 
-const FACELIFT_SLUG = "e39-restajling-2000-2004";
-const PREFACELIFT_SLUG = "e39-1995-2000";
-type Slug = typeof FACELIFT_SLUG | typeof PREFACELIFT_SLUG;
+const BMW = 8;
+const MODEL_5_SERIES = 5865;
+const E39_FACELIFT = 12786; // (E39) Рестайлинг 2000-2004
+const E39_PREFACELIFT = 4439; // E39 1995-2000
 
-const BASE = "https://cars.av.by/bmw/5-seriya";
+type Generation = typeof E39_FACELIFT | typeof E39_PREFACELIFT;
 
-function buildUrl(slug: Slug, page: number): string {
-  const path = `${BASE}/${slug}`;
-  return page > 1 ? `${path}?page=${page}` : path;
+function buildUrl(generation: Generation, page: number): string {
+  const params = new URLSearchParams();
+  params.set("brands[0][brand]", String(BMW));
+  params.set("brands[0][model]", String(MODEL_5_SERIES));
+  params.set("brands[0][generation]", String(generation));
+  if (page > 1) params.set("page", String(page));
+  return `https://cars.av.by/filter?${params.toString()}`;
 }
 
 async function rawFetch(env: Env, url: string): Promise<string | null> {
@@ -60,24 +67,24 @@ async function rawFetch(env: Env, url: string): Promise<string | null> {
   return null;
 }
 
-function parseCursor(cursor: string | undefined): { slug: Slug; page: number } {
-  if (!cursor) return { slug: FACELIFT_SLUG, page: 1 };
+function parseCursor(cursor: string | undefined): { gen: Generation; page: number } {
+  if (!cursor) return { gen: E39_FACELIFT, page: 1 };
   const idx = cursor.indexOf(":");
-  if (idx < 0) return { slug: FACELIFT_SLUG, page: Math.max(1, Number(cursor) || 1) };
-  const slug = cursor.slice(0, idx) === PREFACELIFT_SLUG ? PREFACELIFT_SLUG : FACELIFT_SLUG;
-  return { slug, page: Math.max(1, Number(cursor.slice(idx + 1)) || 1) };
+  if (idx < 0) return { gen: E39_FACELIFT, page: Math.max(1, Number(cursor) || 1) };
+  const gen = Number(cursor.slice(0, idx)) === E39_PREFACELIFT ? E39_PREFACELIFT : E39_FACELIFT;
+  return { gen, page: Math.max(1, Number(cursor.slice(idx + 1)) || 1) };
 }
 
 function nextCursor(
-  cur: { slug: Slug; page: number },
+  cur: { gen: Generation; page: number },
   total: number,
   pageSize: number,
   mode: "daily" | "bootstrap",
 ): string | null {
   if (mode !== "bootstrap") return null;
   const lastPage = Math.max(1, Math.ceil(total / pageSize));
-  if (cur.page < lastPage) return `${cur.slug}:${cur.page + 1}`;
-  if (cur.slug === FACELIFT_SLUG) return `${PREFACELIFT_SLUG}:1`;
+  if (cur.page < lastPage) return `${cur.gen}:${cur.page + 1}`;
+  if (cur.gen === E39_FACELIFT) return `${E39_PREFACELIFT}:1`;
   return null;
 }
 
@@ -86,7 +93,7 @@ export function makeAvbyParser(env: Env): SourceParser {
     source: "av",
     async scan({ cursor, mode }) {
       const cur = parseCursor(cursor);
-      const html = await rawFetch(env, buildUrl(cur.slug, cur.page));
+      const html = await rawFetch(env, buildUrl(cur.gen, cur.page));
       if (!html) return { listings: [], nextCursor: null };
       const { items, total } = parseListPage(html);
       return { listings: items, nextCursor: nextCursor(cur, total, 24, mode) };
