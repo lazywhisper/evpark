@@ -11,7 +11,7 @@ const sellerProfileSchema = z.object({
   emotionalTone: z.enum(["proud", "neutral", "rushed", "defensive", "salesy"]),
   reasonForSelling: z.string().nullable(),
   storyCoherence: z.enum(["consistent", "gaps", "contradictions"]),
-  trustSignals: z.array(z.string()).max(5),
+  trustSignals: z.array(z.string()),
 });
 
 const schema = z.object({
@@ -20,18 +20,18 @@ const schema = z.object({
   ownershipDuration: z.enum(["long", "short", "unknown"]),
   ownersCount: z.number().int().nullable(),
   rustMentioned: z.boolean(),
-  workDone: z.array(z.string()).max(10),
-  workNeeded: z.array(z.string()).max(10),
+  workDone: z.array(z.string()),
+  workNeeded: z.array(z.string()),
   mileageHonesty: z.enum(["honest", "suspicious", "unknown"]),
   exchange: z.boolean(),
   urgency: z.boolean(),
   abroad: z.boolean(),
   polishUp: z.boolean(),
   bodyConditionFromText: z.number().min(0).max(10),
-  positiveQuotes: z.array(z.string()).max(3),
-  negativeQuotes: z.array(z.string()).max(3),
-  keyFacts: z.array(z.string()).max(4),
-  psychSummary: z.string().max(300),
+  positiveQuotes: z.array(z.string()),
+  negativeQuotes: z.array(z.string()),
+  keyFacts: z.array(z.string()),
+  psychSummary: z.string(),
 });
 
 export type TextResult = z.infer<typeof schema>;
@@ -41,13 +41,16 @@ export async function analyzeText(
   description: string,
 ): Promise<{ result: TextResult; tokens: number }> {
   const anthropic = getAnthropic(env);
-  const { object, usage } = await generateObject({
-    model: anthropic(textModel(env)),
-    schema,
-    messages: [
-      { role: "system", content: TEXT_PROMPT },
-      { role: "user", content: description.slice(0, 6000) },
-    ],
-  });
-  return { result: object, tokens: (usage?.totalTokens ?? 0) | 0 };
+  try {
+    const { object, usage } = await generateObject({
+      model: anthropic(textModel(env)),
+      schema,
+      system: TEXT_PROMPT,
+      prompt: description.slice(0, 6000),
+    });
+    return { result: object, tokens: (usage?.totalTokens ?? 0) | 0 };
+  } catch (err) {
+    console.error("[analyzeText] failed:", String(err).slice(0, 500));
+    throw err;
+  }
 }
