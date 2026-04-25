@@ -1,3 +1,4 @@
+import { parse } from "node-html-parser";
 import { fetchWithRetry } from "../lib/http";
 import type { Rates } from "../lib/rates";
 import { toUsd } from "../lib/rates";
@@ -119,11 +120,31 @@ export const kufarParser: SourceParser = {
       const photos: RawPhoto[] = images
         .filter((i) => i.path || i.id)
         .map((i) => ({ url: imageUrl(i) }));
-      const description =
+      let description: string | null =
         (adAny.body as string | undefined) ??
         (adAny.description as string | undefined) ??
         (adAny.body_short as string | undefined) ??
         null;
+
+      // Fallback: парсим HTML-страницу напрямую если __NEXT_DATA__ не дал описания
+      if (!description) {
+        const root = parse(html);
+        const selectors = [
+          "[data-name='AdDescription']",
+          ".styles_description__",
+          ".advert-description",
+          "[class*='description']",
+        ];
+        for (const sel of selectors) {
+          const el = root.querySelector(sel);
+          if (el) {
+            const text = el.text.replace(/\s+/g, " ").trim();
+            if (text.length > 20) { description = text; break; }
+          }
+        }
+      }
+
+      console.log(`[kufar] fetchDetail ${sourceId} desc=${description?.length ?? 0}ch`);
       return {
         description,
         vin: String(params.get("full_vehicle_vin")?.v ?? "") || null,
