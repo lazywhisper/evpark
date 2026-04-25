@@ -49,7 +49,8 @@ export async function handleCommand(env: Env, d: DB, chatId: string, username: s
       return;
     }
     case "/scan_now": {
-      const sources = ["kufar", "onliner", "abw", "av"] as const;
+      // av.by — первым, остальные сразу следом (daily fast)
+      const sources = ["av", "kufar", "onliner", "abw"] as const;
       for (const s of sources) {
         await env.QUEUE_FETCH.send({ kind: "scan", source: s, mode: "daily" });
       }
@@ -57,11 +58,17 @@ export async function handleCommand(env: Env, d: DB, chatId: string, username: s
       return;
     }
     case "/bootstrap": {
-      const sources = ["kufar", "onliner", "abw", "av"] as const;
-      for (const s of sources) {
-        await env.QUEUE_FETCH.send({ kind: "scan", source: s, mode: "bootstrap" });
+      // av.by — первым без задержки, остальные с лагом по минуте чтобы av успел
+      // начать пагинацию.
+      const sources = ["av", "kufar", "onliner", "abw"] as const;
+      for (let i = 0; i < sources.length; i++) {
+        const s = sources[i]!;
+        await env.QUEUE_FETCH.send(
+          { kind: "scan", source: s, mode: "bootstrap" },
+          { delaySeconds: i === 0 ? 0 : i * 60 },
+        );
       }
-      await sendMessage(env, chatId, "Запустил полный обход. Это может занять час-два.");
+      await sendMessage(env, chatId, "Запустил полный обход. av.by пойдёт первым, остальные за ним.");
       return;
     }
     case "/stats": {

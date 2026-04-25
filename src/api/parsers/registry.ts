@@ -6,7 +6,9 @@ import { abwParser } from "./abw";
 import { makeAvbyParser } from "./avby";
 import type { SourceParser } from "./types";
 
-export const ALL_SOURCES: SourceName[] = ["kufar", "onliner", "abw", "av"];
+// Порядок имеет значение: av.by — самый большой и важный источник, его кидаем
+// в очередь первым. Остальные за ним.
+export const ALL_SOURCES: SourceName[] = ["av", "kufar", "onliner", "abw"];
 
 export function getParser(env: Env, source: SourceName): SourceParser {
   switch (source) {
