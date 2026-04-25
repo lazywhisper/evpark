@@ -1,6 +1,12 @@
 import { fetchWithRetry } from "../lib/http";
 import { extractPhone, extractVin, toEur } from "./normalize";
-import type { NormalizedListing, RawPhoto, ScanResult, SourceParser } from "./types";
+import type {
+  ListingDetail,
+  NormalizedListing,
+  RawPhoto,
+  ScanResult,
+  SourceParser,
+} from "./types";
 
 // kufar разделил легковые на отдельный домен auto.kufar.by с Next.js SSR.
 // Их публичный API api.kufar.by/search-api для категории 2010 не отдаёт фильтр
@@ -72,7 +78,47 @@ export const kufarParser: SourceParser = {
     const listings = page.ads.map(toNormalized);
     return { listings, nextCursor: nextCursor(slug, page, mode) } satisfies ScanResult;
   },
+  async fetchDetail(sourceId): Promise<ListingDetail | null> {
+    // Используем тот же __NEXT_DATA__ pattern на странице объявления
+    const url = `https://auto.kufar.by/vi/${sourceId}`;
+    try {
+      const res = await fetchWithRetry(url, {
+        headers: {
+          accept: "text/html,application/xhtml+xml",
+          "user-agent":
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+        retries: 1,
+      });
+      if (!res.ok) return null;
+      const html = await res.text();
+      const m = NEXT_DATA_RE.exec(html);
+      if (!m) return null;
+      const data = JSON.parse(m[1]!) as { props?: { initialState?: { adView?: KufarAdView } } };
+      const ad = data.props?.initialState?.adView?.ad ?? data.props?.initialState?.adView;
+      if (!ad) return null;
+      const params = new Map((ad.ad_parameters ?? []).map((p) => [p.p, p]));
+      const region = String(params.get("region")?.vl ?? "") || null;
+      const area = String(params.get("area")?.vl ?? "") || null;
+      const photos: RawPhoto[] = (ad.images ?? [])
+        .filter((i) => i.path || i.id)
+        .map((i) => ({ url: imageUrl(i) }));
+      return {
+        description: ad.body ?? ad.body_short ?? null,
+        vin: String(params.get("full_vehicle_vin")?.v ?? "") || null,
+        phoneNorm: null,
+        region: [region, area].filter(Boolean).join(", ") || null,
+        extraPhotos: photos,
+      };
+    } catch {
+      return null;
+    }
+  },
 };
+
+type KufarAdView = {
+  ad?: KufarAd;
+} & KufarAd;
 
 function imageUrl(img: KufarImage): string {
   if (img.path?.startsWith("http")) return img.path;

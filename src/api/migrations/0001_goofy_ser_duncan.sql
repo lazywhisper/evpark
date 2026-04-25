@@ -1,0 +1,1 @@
+ALTER TABLE `scoring` ADD `text_findings_json` text;

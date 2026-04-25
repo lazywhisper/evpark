@@ -158,13 +158,40 @@ export const photos = sqliteTable(
   }),
 );
 
+// Новые findings (после рефокуса): Vision видит только M-package + диски + сидения,
+// тексты тащит rust mention, ownership, work done/needed.
+// Старые записи могут содержать legacy { rust, interior, originality } —
+// фронт должен уметь обе формы.
 export type VisionFindings = {
-  rust: number;
-  interior: number;
-  originality: number;
-  defects: string[];
-  redFlags: string[];
-  notes?: string;
+  // legacy (до 2026-04)
+  rust?: number;
+  interior?: number;
+  originality?: number;
+  defects?: string[];
+  redFlags?: string[];
+  // новые
+  mPackage?: boolean;
+  wheelsModel?: string | null;
+  wheelsCategory?: "oem" | "m_oem" | "aftermarket" | "steel" | "unknown";
+  wheelsConfidence?: number;
+  seatsCondition?: number;
+  originalityVisible?: number;
+  notes?: string | null;
+};
+
+export type TextFindings = {
+  ownershipDuration?: "long" | "short" | "unknown";
+  ownersCount?: number | null;
+  rustMentioned?: boolean;
+  workDone?: string[];
+  workNeeded?: string[];
+  mileageHonesty?: "honest" | "suspicious" | "unknown";
+  exchange?: boolean;
+  urgency?: boolean;
+  abroad?: boolean;
+  polishUp?: boolean;
+  bodyConditionFromText?: number;
+  keyQuotes?: string[];
 };
 
 export const scoring = sqliteTable("scoring", {
@@ -175,6 +202,7 @@ export const scoring = sqliteTable("scoring", {
   visionScore: integer("vision_score"),
   textScore: integer("text_score"),
   visionFindingsJson: text("vision_findings_json", { mode: "json" }).$type<VisionFindings>(),
+  textFindingsJson: text("text_findings_json", { mode: "json" }).$type<TextFindings>(),
   sellerType: text("seller_type").$type<"caring_owner" | "flipper" | "concealer" | "unknown">(),
   redFlagsJson: text("red_flags_json", { mode: "json" }).$type<string[]>(),
   modelVersion: text("model_version"),

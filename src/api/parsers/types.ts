@@ -27,7 +27,21 @@ export type ScanResult = {
   nextCursor: string | null;
 };
 
+export type ListingDetail = {
+  description: string | null;
+  vin: string | null;
+  phoneNorm: string | null;
+  region: string | null;
+  extraPhotos: RawPhoto[];
+};
+
 export interface SourceParser {
   readonly source: SourceName;
   scan(opts: { cursor?: string; mode: "daily" | "bootstrap" }): Promise<ScanResult>;
+  /**
+   * Fetch the full detail page for a listing — used during scoring to get
+   * the full description (list-page bodies are usually truncated/missing).
+   * Returns null if detail fetching is not supported or failed.
+   */
+  fetchDetail?(sourceId: string, url: string): Promise<ListingDetail | null>;
 }

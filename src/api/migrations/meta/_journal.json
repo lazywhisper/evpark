@@ -8,6 +8,13 @@
       "when": 1777123640294,
       "tag": "0000_strong_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1777134537833,
+      "tag": "0001_goofy_ser_duncan",
+      "breakpoints": true
     }
   ]
 }

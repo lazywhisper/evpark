@@ -9,6 +9,7 @@ export type Listing = {
   mileageKm: number | null;
   region: string | null;
   bodyColor: string | null;
+  transmission: string | null;
   vin: string | null;
   description: string | null;
   firstSeenAt: number;
@@ -16,25 +17,49 @@ export type Listing = {
   status: "active" | "sold" | "removed";
 };
 
+export type VisionFindings = {
+  // legacy
+  rust?: number;
+  interior?: number;
+  originality?: number;
+  defects?: string[];
+  redFlags?: string[];
+  // new
+  mPackage?: boolean;
+  wheelsModel?: string | null;
+  wheelsCategory?: "oem" | "m_oem" | "aftermarket" | "steel" | "unknown";
+  wheelsConfidence?: number;
+  seatsCondition?: number;
+  originalityVisible?: number;
+  notes?: string | null;
+};
+
+export type TextFindings = {
+  ownershipDuration?: "long" | "short" | "unknown";
+  ownersCount?: number | null;
+  rustMentioned?: boolean;
+  workDone?: string[];
+  workNeeded?: string[];
+  mileageHonesty?: "honest" | "suspicious" | "unknown";
+  exchange?: boolean;
+  urgency?: boolean;
+  abroad?: boolean;
+  polishUp?: boolean;
+  bodyConditionFromText?: number;
+  keyQuotes?: string[];
+};
+
 export type Scoring = {
   listingId: string;
   overallScore: number;
   visionScore: number | null;
   textScore: number | null;
-  visionFindingsJson: {
-    rust: number;
-    interior: number;
-    originality: number;
-    defects: string[];
-    redFlags: string[];
-    notes?: string;
-  } | null;
+  visionFindingsJson: VisionFindings | null;
+  textFindingsJson: TextFindings | null;
   sellerType: "caring_owner" | "flipper" | "concealer" | "unknown" | null;
   redFlagsJson: string[] | null;
   scoredAt: number;
 };
-
-export type ListingRow = { l: Listing; s: Scoring | null; thumbUrl: string | null };
 
 export type Photo = {
   id: string;
@@ -46,6 +71,8 @@ export type Photo = {
   height: number | null;
   orderIdx: number;
 };
+
+export type ListingRow = { l: Listing; s: Scoring | null; thumbUrl: string | null };
 
 const base = "/api";
 
@@ -59,7 +86,7 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function fetchListings(minScore = 0, limit = 100) {
+export async function fetchListings(minScore = 0, limit = 500) {
   return jsonFetch<{ listings: ListingRow[] }>(`/listings?minScore=${minScore}&limit=${limit}`);
 }
 

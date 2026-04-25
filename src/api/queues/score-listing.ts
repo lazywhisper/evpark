@@ -4,6 +4,8 @@ import { listings, photos, scoring } from "../database/schema";
 import { findOrCreateCluster } from "../dedup/matcher";
 import { fingerprintFromUrl } from "../dedup/phash";
 import type { Env, ScoreListingMessage } from "../env";
+import { newId } from "../lib/id";
+import { getParser } from "../parsers/registry";
 import { scoreListing } from "../scoring/score";
 
 // $6500 минимум — машины ниже этого не рассматриваем.
@@ -25,6 +27,53 @@ export async function processScoreMessage(env: Env, d: DB, msg: ScoreListingMess
   if (lstPre?.priceEur != null && lstPre.priceEur < priceFloorEur(env)) {
     console.log(`[score] skip ${listingId} priceEur=${lstPre.priceEur} < floor`);
     return;
+  }
+
+  // 0. Подтягиваем полное описание со страницы объявления, если оно слабое.
+  //    Vision слабоват для оценки старых E39 на постановочных фото — основной
+  //    сигнал берём из описания продавца. Fetch'им только если description короткое.
+  const lstEarly = (await d.select().from(listings).where(eq(listings.id, listingId)).limit(1))[0];
+  if (lstEarly && (lstEarly.description ?? "").length < 200) {
+    try {
+      const parser = getParser(env, lstEarly.source);
+      if (parser.fetchDetail) {
+        const detail = await parser.fetchDetail(lstEarly.sourceId, lstEarly.url);
+        if (detail) {
+          const updates: Record<string, unknown> = {};
+          if (detail.description && detail.description.length > (lstEarly.description ?? "").length) {
+            updates.description = detail.description;
+          }
+          if (detail.vin && !lstEarly.vin) updates.vin = detail.vin;
+          if (detail.phoneNorm && !lstEarly.phoneNorm) updates.phoneNorm = detail.phoneNorm;
+          if (detail.region && !lstEarly.region) updates.region = detail.region;
+          if (Object.keys(updates).length > 0) {
+            await d.update(listings).set(updates).where(eq(listings.id, listingId));
+          }
+          // Доливаем фото если их меньше 3
+          if (detail.extraPhotos.length > 0) {
+            const have = await d.select().from(photos).where(eq(photos.listingId, listingId));
+            if (have.length < 3) {
+              const toAdd = detail.extraPhotos.slice(0, 6 - have.length);
+              for (let i = 0; i < toAdd.length; i++) {
+                const url = toAdd[i]!.url;
+                if (have.some((p) => p.url === url)) continue;
+                await d.insert(photos).values({
+                  id: newId("ph"),
+                  listingId,
+                  url,
+                  orderIdx: have.length + i,
+                });
+              }
+            }
+          }
+          console.log(
+            `[score:detail] ${lstEarly.source}/${lstEarly.sourceId} desc=${detail.description?.length ?? 0}ch`,
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("[score:detail] failed", err);
+    }
   }
 
   // 1. Считаем pHash для top-3 фото

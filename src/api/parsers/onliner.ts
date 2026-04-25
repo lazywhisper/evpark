@@ -1,6 +1,12 @@
 import { fetchWithRetry } from "../lib/http";
 import { extractVin, normalizePhoneBy, toEur } from "./normalize";
-import type { NormalizedListing, RawPhoto, ScanResult, SourceParser } from "./types";
+import type {
+  ListingDetail,
+  NormalizedListing,
+  RawPhoto,
+  ScanResult,
+  SourceParser,
+} from "./types";
 
 // Автобарахолка переехала с ar.onliner.by на ab.onliner.by.
 // API: ab.onliner.by/sdapi/ab.api/search/vehicles
@@ -62,6 +68,49 @@ export const onlinerParser: SourceParser = {
     const listings = (json.adverts ?? []).map(toNormalized);
     return { listings, nextCursor: nextCursor({ gen, page }, json, mode) } satisfies ScanResult;
   },
+  async fetchDetail(sourceId): Promise<ListingDetail | null> {
+    const url = `https://ab.api.onliner.by/adverts/${sourceId}`;
+    try {
+      const res = await fetchWithRetry(url, {
+        headers: {
+          accept: "application/json",
+          referer: "https://ab.onliner.by/",
+        },
+        retries: 1,
+      });
+      if (!res.ok) return null;
+      const d = (await res.json()) as OnlinerDetail;
+      const phoneFromDetail = d.seller?.phones?.find((p) => /\d/.test(p) && !p.includes("*"));
+      const region =
+        d.location?.region?.name ?? d.location?.city?.name ?? d.location?.address ?? null;
+      const photos: RawPhoto[] = (d.images ?? [])
+        .map((img) => ({ url: img["lg@x2"] ?? img["lg@x1"] ?? img.original ?? "" }))
+        .filter((p) => p.url);
+      return {
+        description: d.description ?? d.text ?? null,
+        vin: d.specs?.has_vin ? extractVin(d.description ?? "") : null,
+        phoneNorm: phoneFromDetail ? normalizePhoneBy(phoneFromDetail) : null,
+        region,
+        extraPhotos: photos,
+      };
+    } catch {
+      return null;
+    }
+  },
+};
+
+type OnlinerDetail = {
+  id: number;
+  description?: string;
+  text?: string;
+  seller?: { phones?: string[] };
+  location?: {
+    address?: string;
+    region?: { name?: string };
+    city?: { name?: string };
+  };
+  specs?: { has_vin?: boolean };
+  images?: Array<Record<string, string>>;
 };
 
 function toNormalized(a: OnlinerAdvert): NormalizedListing {

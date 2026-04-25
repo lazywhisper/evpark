@@ -2,7 +2,13 @@ import { parse } from "node-html-parser";
 import type { Env } from "../env";
 import { fetchWithRetry } from "../lib/http";
 import { extractPhone, extractVin, toEur } from "./normalize";
-import type { NormalizedListing, RawPhoto, ScanResult, SourceParser } from "./types";
+import type {
+  ListingDetail,
+  NormalizedListing,
+  RawPhoto,
+  ScanResult,
+  SourceParser,
+} from "./types";
 
 // av.by защищён Cloudflare Bot Management. Прямой fetch с CF Workers получает
 // 503/468. JSON-эндпоинт /api/v1/items больше не отдаёт listing'и для нашего
@@ -98,6 +104,48 @@ export function makeAvbyParser(env: Env): SourceParser {
       const { items, total } = parseListPage(html);
       return { listings: items, nextCursor: nextCursor(cur, total, 24, mode) };
     },
+    async fetchDetail(sourceId, url): Promise<ListingDetail | null> {
+      const detailUrl = url.startsWith("http") ? url : `https://cars.av.by/bmw/5-seriya/${sourceId}`;
+      const html = await rawFetch(env, detailUrl);
+      if (!html) return null;
+      return parseDetailPage(html);
+    },
+  };
+}
+
+function parseDetailPage(html: string): ListingDetail {
+  const root = parse(html);
+  // Описание: блок ".advert-info__description" или meta og:description
+  const descBlock =
+    root.querySelector(".advert-description__text") ||
+    root.querySelector(".js-description") ||
+    root.querySelector("[itemprop='description']");
+  const description = descBlock?.text?.trim() || null;
+
+  // VIN: либо в meta-блоках, либо в badge
+  const vinBlock = root.querySelector("[data-vin]") || root.querySelector(".vin");
+  const vin = vinBlock?.getAttribute("data-vin") || extractVin(description ?? "");
+
+  // Фото детальной — больше превью из карусели
+  const photos: RawPhoto[] = root
+    .querySelectorAll("img.gallery__img, .gallery img, .carousel__wrapper img")
+    .map((img) => {
+      const dataSrc = img.getAttribute("data-src") || img.getAttribute("src") || "";
+      return { url: dataSrc };
+    })
+    .filter((p) => p.url.startsWith("http") && /avcdn\.av\.by/.test(p.url));
+
+  const region =
+    root.querySelector(".advert-info__region")?.text?.trim() ||
+    root.querySelector(".advert__location")?.text?.trim() ||
+    null;
+
+  return {
+    description,
+    vin,
+    phoneNorm: extractPhone(description ?? ""),
+    region,
+    extraPhotos: photos,
   };
 }
 
