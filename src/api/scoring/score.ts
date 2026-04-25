@@ -16,11 +16,12 @@ export type ScoreOutcome = {
   tokensUsed: number;
 };
 
+// "unknown" — это нейтраль, не штраф: большинство объявлений короткие, нет описания.
 const SELLER_RISK: Record<string, number> = {
-  caring_owner: 5,
-  unknown: 40,
-  concealer: 80,
-  flipper: 60,
+  caring_owner: 0,
+  unknown: 20,
+  concealer: 60,
+  flipper: 45,
 };
 
 export async function scoreListing(env: Env, d: DB, listingId: string): Promise<ScoreOutcome> {
@@ -40,9 +41,14 @@ export async function scoreListing(env: Env, d: DB, listingId: string): Promise<
       const v = await analyzePhotos(env, urls);
       visionFindings = v.result;
       tokens += v.tokens;
-      // среднее по 3 осям с весами
+      // Калибровка: rust=6/interior=6/originality=6 → 60 (типичный E39).
+      // rust=8/interior=7/originality=8 → 78 (отличный экземпляр).
+      // Растягиваем шкалу 4..10 → 30..100, чтобы исключить шум 0-3.
+      const stretch = (x: number) => Math.max(0, ((Math.min(10, x) - 4) / 6) * 70 + 30);
       visionScore = Math.round(
-        (v.result.rust * 0.5 + v.result.interior * 0.3 + v.result.originality * 0.2) * 10,
+        stretch(v.result.rust) * 0.5 +
+          stretch(v.result.interior) * 0.3 +
+          stretch(v.result.originality) * 0.2,
       );
     } catch (err) {
       console.warn("[scoring] vision failed", err);
@@ -62,18 +68,19 @@ export async function scoreListing(env: Env, d: DB, listingId: string): Promise<
       sellerType = s.result.category;
       redFlags = r.result.flags;
       tokens += s.tokens + r.tokens;
-      const sellerRisk = SELLER_RISK[sellerType] ?? 40;
-      const flagPenalty = Math.min(redFlags.length * 10, 60);
+      const sellerRisk = SELLER_RISK[sellerType] ?? 20;
+      const flagPenalty = Math.min(redFlags.length * 7, 35);
       textScore = Math.max(0, 100 - sellerRisk - flagPenalty);
     } catch (err) {
       console.warn("[scoring] text failed", err);
     }
   }
 
+  // Если описания нет (текст-скоринг невозможен), не штрафуем — fallback на vision.
   const overall =
     visionScore != null && textScore != null
-      ? Math.round(visionScore * 0.6 + textScore * 0.4)
-      : (visionScore ?? textScore ?? 50);
+      ? Math.round(visionScore * 0.65 + textScore * 0.35)
+      : (visionScore ?? textScore ?? 55);
 
   await d
     .insert(scoring)
