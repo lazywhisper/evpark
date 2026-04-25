@@ -18,7 +18,7 @@ import type {
 // Без ScrapFly Cloudflare Bot Management блокирует запросы.
 
 const FILTER_BASE =
-  "https://cars.av.by/filter?brands%5B0%5D%5Bbrand%5D=8&brands%5B0%5D%5Bmodel%5D=5865&brands%5B0%5D%5Bgeneration%5D=12786";
+  "https://cars.av.by/filter?brands[0][brand]=8&brands[0][model]=5865&brands[0][generation]=12786";
 
 function buildFilterUrl(page: number): string {
   return page > 1 ? `${FILTER_BASE}&page=${page}` : FILTER_BASE;
