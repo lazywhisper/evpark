@@ -32,6 +32,7 @@ export interface Env {
   DEFAULT_THRESHOLD: string;
   VISION_MODEL?: string;
   TEXT_MODEL?: string;
+  PRICE_FLOOR_EUR?: string;
 
   // secrets
   BETTER_AUTH_SECRET: string;

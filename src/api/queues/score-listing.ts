@@ -6,9 +6,26 @@ import { fingerprintFromUrl } from "../dedup/phash";
 import type { Env, ScoreListingMessage } from "../env";
 import { scoreListing } from "../scoring/score";
 
+// $6500 минимум — машины ниже этого не рассматриваем.
+// Ценник в EUR ≈ priceUsd × 0.92. $6500 ≈ €5980.
+const PRICE_FLOOR_EUR_DEFAULT = 5980;
+
+function priceFloorEur(env: Env): number {
+  const raw = env.PRICE_FLOOR_EUR?.trim();
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) ? n : PRICE_FLOOR_EUR_DEFAULT;
+}
+
 export async function processScoreMessage(env: Env, d: DB, msg: ScoreListingMessage) {
   const { listingId } = msg;
   if (!listingId) return;
+
+  // Цена-гейт: дешевле порога не скорим и не уведомляем — экономим Claude-токены.
+  const lstPre = (await d.select({ priceEur: listings.priceEur }).from(listings).where(eq(listings.id, listingId)).limit(1))[0];
+  if (lstPre?.priceEur != null && lstPre.priceEur < priceFloorEur(env)) {
+    console.log(`[score] skip ${listingId} priceEur=${lstPre.priceEur} < floor`);
+    return;
+  }
 
   // 1. Считаем pHash для top-3 фото
   const ph = await d.select().from(photos).where(eq(photos.listingId, listingId)).limit(3);
