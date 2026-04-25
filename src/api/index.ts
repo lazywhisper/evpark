@@ -51,14 +51,17 @@ app.get("/listings", async (c) => {
     .limit(limit);
   const filtered = minScore > 0 ? rows.filter((r) => (r.s?.overallScore ?? 0) >= minScore) : rows;
 
-  // Подтягиваем до 8 фото на каждое объявление одним запросом, потом группируем.
+  // Подтягиваем до 8 фото на каждое объявление. Чанкуем по 80 id чтобы не упереться
+  // в лимит количества параметров в SQL (D1 имеет ограничение).
   const ids = filtered.map((r) => r.l.id);
   const photoMap = new Map<string, string[]>();
-  if (ids.length > 0) {
+  const CHUNK = 80;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
     const photoRows = await d
       .select({ listingId: photos.listingId, url: photos.url, orderIdx: photos.orderIdx })
       .from(photos)
-      .where(inArray(photos.listingId, ids))
+      .where(inArray(photos.listingId, chunk))
       .orderBy(photos.listingId, photos.orderIdx);
     for (const p of photoRows) {
       const arr = photoMap.get(p.listingId) ?? [];
