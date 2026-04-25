@@ -1,4 +1,3 @@
-import puppeteer from "@cloudflare/puppeteer";
 import { parse } from "node-html-parser";
 import type { Env } from "../env";
 import { fetchWithRetry } from "../lib/http";
@@ -9,24 +8,16 @@ import type {
   ListingDetail,
   NormalizedListing,
   RawPhoto,
-  ScanResult,
   SourceParser,
 } from "./types";
 
-// av.by защищён Cloudflare Bot Management. Идём через ScrapFly.
+// av.by защищён Cloudflare Bot Management — только ScrapFly (residential proxy)
+// проходит надёжно.
 //
-// SEO-URL `/bmw/5-seriya/<gen-slug>` отдаёт 25 карточек + total. Pagination
-// в виде `?page=N` НЕ работает (всегда возвращает первую страницу). Кнопка
-// "Показать ещё" ведёт на /filter URL с подвешенными параметрами; без
-// session/cookie /filter возвращает generic-страницу всех авто.
-//
-// Поэтому работаем по упрощённой схеме:
-//   - Берём первые 25 карточек facelift
-//   - В bootstrap — переходим на pre-facelift slug
-//   - Дальше pagination не делаем (получаем 25 facelift + 25 pre-facelift = 50)
-//
-// 50 объявлений с av.by лучше чем 0. Если позже найдём способ пагинации
-// (rendered_js + click "Показать ещё" в ScrapFly), вернёмся к большим объёмам.
+// SEO-URL `/bmw/5-seriya/<gen-slug>` отдаёт 25 карточек. Pagination через
+// ?page=N не работает (всегда первая страница). Поэтому:
+//   - daily: берём 25 facelift карточек
+//   - bootstrap: facelift (25) → pre-facelift (25) = 50 итого
 
 const FACELIFT_SLUG = "e39-restajling-2000-2004";
 const PREFACELIFT_SLUG = "e39-1995-2000";
@@ -36,61 +27,8 @@ function buildUrl(slug: Slug): string {
   return `https://cars.av.by/bmw/5-seriya/${slug}`;
 }
 
-async function browserFetchAllCards(env: Env, url: string, maxClicks = 30): Promise<string | null> {
-  // Cloudflare Browser Rendering: открываем SEO URL, кликаем "Показать ещё"
-  // пока не закончатся объявления. Возвращаем итоговый HTML.
-  if (!env.BROWSER) return null;
-  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
-  try {
-    browser = await puppeteer.launch(env.BROWSER);
-    const page = await browser.newPage();
-    await page.setUserAgent(
-      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    );
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    // Ждём появления хотя бы одной карточки
-    await page.waitForSelector(".listing-item__wrap", { timeout: 15_000 }).catch(() => {});
-    // Кликаем "Показать ещё" пока кнопка существует
-    for (let i = 0; i < maxClicks; i++) {
-      const btn = await page.$(".paging__button a");
-      if (!btn) break;
-      try {
-        const oldCount = (await page.$$(".listing-item__wrap")).length;
-        await btn.click();
-        // Ждём пока появятся новые карточки
-        await page.waitForFunction(
-          (count: number) =>
-            document.querySelectorAll(".listing-item__wrap").length > count,
-          { timeout: 10_000, polling: 500 },
-          oldCount,
-        );
-      } catch {
-        break;
-      }
-    }
-    const html = await page.content();
-    return html;
-  } catch (err) {
-    console.warn("[avby] browser-rendering failed:", err);
-    return null;
-  } finally {
-    if (browser) {
-      try {
-        await browser.close();
-      } catch {
-        // ignore
-      }
-    }
-  }
-}
-
 async function rawFetch(env: Env, url: string): Promise<string | null> {
-  // Strategy 1: Cloudflare Browser Rendering — кликает "Показать ещё" чтобы
-  // собрать всю выдачу. Платная фича Workers (включена при BROWSER binding).
-  const browserHtml = await browserFetchAllCards(env, url);
-  if (browserHtml) return browserHtml;
-
-  // Strategy 2: ScrapFly (fallback — может быть исчерпан квотой)
+  // Strategy 1: ScrapFly с residential proxy + ASP bypass
   if (env.SCRAPFLY_KEY) {
     const sf = new URL("https://api.scrapfly.io/scrape");
     sf.searchParams.set("key", env.SCRAPFLY_KEY);
@@ -102,21 +40,36 @@ async function rawFetch(env: Env, url: string): Promise<string | null> {
       const res = await fetchWithRetry(sf.toString(), { retries: 1, timeoutMs: 60_000 });
       if (res.ok) {
         const json = (await res.json()) as { result?: { content?: string; status_code?: number } };
-        if (json.result?.status_code && json.result.status_code >= 400) return null;
-        return json.result?.content ?? null;
+        if (json.result?.status_code && json.result.status_code >= 400) {
+          console.warn("[avby] scrapfly returned", json.result.status_code, "for", url);
+          return null;
+        }
+        if (json.result?.content) return json.result.content;
       }
     } catch (err) {
-      console.warn("[avby] scrapfly failed:", err);
+      console.warn("[avby] scrapfly error:", err);
     }
   }
 
-  // Strategy 2: пробуем прямо (на случай если когда-нибудь повезёт)
+  // Strategy 2: прямой запрос с браузерными заголовками (редко проходит CF BM)
   try {
     const res = await fetchWithRetry(url, {
-      headers: { accept: "text/html", "user-agent": "Mozilla/5.0" },
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "ru-BY,ru;q=0.9,en;q=0.8",
+        "cache-control": "no-cache",
+      },
       retries: 1,
     });
-    if (res.ok) return await res.text();
+    if (res.ok) {
+      const html = await res.text();
+      // Если Cloudflare вернул challenge-страницу — отбрасываем
+      if (!html.includes("cf-browser-verification") && html.includes("listing-item")) {
+        return html;
+      }
+    }
   } catch {
     // ignore
   }
@@ -156,27 +109,22 @@ export function makeAvbyParser(env: Env): SourceParser {
 
 function parseDetailPage(html: string): ListingDetail {
   const root = parse(html);
-  // Описание: блок .card__comment-text внутри .card__comment-body.
   const descBlock = root.querySelector(".card__comment-text");
   const descParagraphs = descBlock
     ? descBlock.querySelectorAll("p").map((p) => p.text.trim()).filter(Boolean)
     : [];
   let description = descParagraphs.length > 0 ? descParagraphs.join("\n\n") : descBlock?.text?.trim() ?? null;
 
-  // Дополнительно подкладываем перечень опций (комплектация) — это тоже сигнал для текста.
-  const optsTitle = root.querySelectorAll(".card__options-category").map((e) => e.text.trim());
   const optsItems = root.querySelectorAll(".card__options li").map((e) => e.text.trim());
-  if (optsTitle.length > 0 || optsItems.length > 0) {
+  if (optsItems.length > 0) {
     const optsLine = optsItems.slice(0, 50).join(", ");
     if (description) description = `${description}\n\n[комплектация]\n${optsLine}`;
     else description = `[комплектация]\n${optsLine}`;
   }
 
-  // VIN
   const vinBlock = root.querySelector("[data-vin]") || root.querySelector(".vin");
   const vin = vinBlock?.getAttribute("data-vin") || extractVin(description ?? "");
 
-  // Фото
   const photos: RawPhoto[] = root
     .querySelectorAll("img.gallery__img, .gallery img, .card-gallery img, img[data-src*='avcdn']")
     .map((img) => {
@@ -209,7 +157,6 @@ function parseListPage(html: string, rates: Rates): { items: NormalizedListing[]
     const item = parseCard(card, rates);
     if (item) items.push(item);
   }
-  // Найти "317 объявлений" в тексте
   const totalMatch = root.text.match(/(\d[\d\s]*)\s*объявлен/u);
   const total = totalMatch ? Number(totalMatch[1]!.replace(/\s/g, "")) : items.length;
   return { items, total };
@@ -226,7 +173,6 @@ function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> &
   const title = (linkEl?.text || "BMW 5 серия").replace(/\s+/g, " ").trim();
   const url = href.startsWith("http") ? href : `https://cars.av.by${href}`;
 
-  // params: [ "2001 г.", "автомат, 2,5 л, дизель, седан", "417 000 км" ]
   const params = card.querySelectorAll(".listing-item__params > div").map((d) => d.text.trim());
   const yearMatch = params[0]?.match(/(\d{4})/);
   const year = yearMatch ? Number(yearMatch[1]) : null;
@@ -251,14 +197,12 @@ function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> &
     .map((img) => {
       const dataSrcset = img.getAttribute("data-srcset") || "";
       const dataSrc = img.getAttribute("data-src") || "";
-      // Берём 2x (advertmedium) если есть, иначе 1x (advertpreview)
       const x2 = dataSrcset.match(/(https:\/\/avcdn\.av\.by\/[^\s"]+)/);
       return { url: x2?.[1] ?? dataSrc };
     })
     .filter((p) => p.url && p.url.startsWith("http"));
 
-  const hasVinBadge = card.querySelectorAll(".badge").some((b) => /vin/i.test(b.text));
-  const vin = hasVinBadge ? extractVin(description) : extractVin(description);
+  const vin = extractVin(description);
 
   return {
     source: "av",
@@ -277,6 +221,6 @@ function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> &
     phoneNorm: extractPhone(description),
     description,
     photos,
-    raw: { id: sourceId, hasVinBadge },
+    raw: { id: sourceId },
   };
 }
