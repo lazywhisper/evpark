@@ -47,19 +47,22 @@ async function browserFetchAllCards(env: Env, url: string, maxClicks = 30): Prom
     await page.setUserAgent(
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     );
-    await page.goto(url, { waitUntil: "networkidle0", timeout: 30_000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    // Ждём появления хотя бы одной карточки
+    await page.waitForSelector(".listing-item__wrap", { timeout: 15_000 }).catch(() => {});
     // Кликаем "Показать ещё" пока кнопка существует
     for (let i = 0; i < maxClicks; i++) {
       const btn = await page.$(".paging__button a");
       if (!btn) break;
       try {
+        const oldCount = (await page.$$(".listing-item__wrap")).length;
         await btn.click();
         // Ждём пока появятся новые карточки
         await page.waitForFunction(
-          (oldCount: number) =>
-            document.querySelectorAll(".listing-item__wrap").length > oldCount,
+          (count: number) =>
+            document.querySelectorAll(".listing-item__wrap").length > count,
           { timeout: 10_000, polling: 500 },
-          (await page.$$(".listing-item__wrap")).length,
+          oldCount,
         );
       } catch {
         break;
