@@ -92,8 +92,15 @@ export const kufarParser: SourceParser = {
         },
         retries: 1,
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        console.warn("[kufar] fetchDetail", res.status, url);
+        return null;
+      }
       const html = await res.text();
+      if (!html.includes("__NEXT_DATA__")) {
+        console.warn("[kufar] fetchDetail: no __NEXT_DATA__ (CF block?)", url);
+        return null;
+      }
       const m = NEXT_DATA_RE.exec(html);
       if (!m) return null;
       const data = JSON.parse(m[1]!) as { props?: { initialState?: { adView?: KufarAdView } } };

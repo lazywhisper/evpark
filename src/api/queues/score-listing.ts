@@ -66,8 +66,10 @@ export async function processScoreMessage(env: Env, d: DB, msg: ScoreListingMess
             }
           }
           console.log(
-            `[score:detail] ${lstEarly.source}/${lstEarly.sourceId} desc=${detail.description?.length ?? 0}ch`,
+            `[score:detail] ${lstEarly.source}/${lstEarly.sourceId} desc=${detail.description?.length ?? 0}ch photos=${detail.extraPhotos.length}`,
           );
+        } else {
+          console.warn(`[score:detail] ${lstEarly.source}/${lstEarly.sourceId} fetchDetail returned null — no description`);
         }
       }
     } catch (err) {

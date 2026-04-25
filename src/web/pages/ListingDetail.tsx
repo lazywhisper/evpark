@@ -218,6 +218,13 @@ export default function ListingDetail() {
           )}
 
           {/* Text findings */}
+          {!t && s && (
+            <div className="mt-4 text-xs text-muted-foreground italic border-t border-border pt-3">
+              {l.description
+                ? "Текстовый анализ в очереди или не запущен"
+                : "Продавец не написал описание — текстовый анализ недоступен"}
+            </div>
+          )}
           {t && (
             <div className="mt-4 space-y-3 text-sm">
               {t.psychSummary && (
