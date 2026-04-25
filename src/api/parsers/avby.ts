@@ -1,34 +1,31 @@
+import { parse } from "node-html-parser";
 import type { Env } from "../env";
 import { fetchWithRetry } from "../lib/http";
-import { extractPhone, extractVin, parsePrice, toEur } from "./normalize";
+import { extractPhone, extractVin, toEur } from "./normalize";
 import type { NormalizedListing, RawPhoto, ScanResult, SourceParser } from "./types";
 
-// av.by защищён Cloudflare Bot Management. Исходящие IP Cloudflare Workers
-// почти наверняка получат challenge от того же CF. Стратегия:
-//   1. Пробуем напрямую (вдруг повезёт — иногда отдаёт без challenge на /api).
-//   2. Если есть SCRAPFLY_KEY — идём через ScrapFly (asp=true, render_js=true).
-//   3. Если есть FLY_FALLBACK_URL — идём в свой Camoufox-контейнер.
-//   4. Иначе — пропускаем источник и логируем предупреждение.
+// av.by защищён Cloudflare Bot Management. Прямой fetch с CF Workers получает
+// 503/468. JSON-эндпоинт /api/v1/items больше не отдаёт listing'и для нашего
+// поколения, но публичная HTML-страница `/bmw/5-seriya/<gen-slug>` отдаёт
+// 24 карточки на страницу с микроразметкой schema.org + классами
+// listing-item__*. Парсим её через ScrapFly (asp=true).
 //
-// av.by фронт использует JSON эндпоинт /api/v1/items?brand=2&model=259&generation=2701
-// (числовые ID для BMW 5er E39). Подтвердить вручную из DevTools при первой настройке.
+// Cursor format: "<slug>:<page>". Bootstrap идёт facelift → pre-facelift.
+// Daily — только первая страница facelift.
 
-const BASE = "https://av.by/api/v1/items";
-const BMW_BRAND = 2;
-const BMW_5_MODEL = 259;
-const E39_GENERATION = 2701;
+const FACELIFT_SLUG = "e39-restajling-2000-2004";
+const PREFACELIFT_SLUG = "e39-1995-2000";
+type Slug = typeof FACELIFT_SLUG | typeof PREFACELIFT_SLUG;
 
-async function rawFetch(env: Env, url: string, headers: Record<string, string>): Promise<string | null> {
-  // Strategy 1: direct
-  try {
-    const res = await fetchWithRetry(url, { headers, retries: 1 });
-    if (res.ok) return await res.text();
-    if (res.status !== 403 && res.status !== 503 && res.status !== 468) return null;
-  } catch {
-    // fallthrough
-  }
+const BASE = "https://cars.av.by/bmw/5-seriya";
 
-  // Strategy 2: ScrapFly
+function buildUrl(slug: Slug, page: number): string {
+  const path = `${BASE}/${slug}`;
+  return page > 1 ? `${path}?page=${page}` : path;
+}
+
+async function rawFetch(env: Env, url: string): Promise<string | null> {
+  // Strategy 1: ScrapFly (основной канал — без него av.by нам недоступен)
   if (env.SCRAPFLY_KEY) {
     const sf = new URL("https://api.scrapfly.io/scrape");
     sf.searchParams.set("key", env.SCRAPFLY_KEY);
@@ -36,144 +33,143 @@ async function rawFetch(env: Env, url: string, headers: Record<string, string>):
     sf.searchParams.set("asp", "true");
     sf.searchParams.set("country", "by,pl,lt");
     sf.searchParams.set("render_js", "false");
-    const res = await fetchWithRetry(sf.toString(), { retries: 1, timeoutMs: 60_000 });
-    if (res.ok) {
-      const json = (await res.json()) as { result?: { content?: string } };
-      return json.result?.content ?? null;
+    try {
+      const res = await fetchWithRetry(sf.toString(), { retries: 1, timeoutMs: 60_000 });
+      if (res.ok) {
+        const json = (await res.json()) as { result?: { content?: string; status_code?: number } };
+        if (json.result?.status_code && json.result.status_code >= 400) return null;
+        return json.result?.content ?? null;
+      }
+    } catch (err) {
+      console.warn("[avby] scrapfly failed:", err);
     }
   }
 
-  // Strategy 3: Fly.io fallback
-  if (env.FLY_FALLBACK_URL && env.FLY_FALLBACK_HMAC) {
-    const body = JSON.stringify({ url, headers });
-    const sig = await hmac(env.FLY_FALLBACK_HMAC, body);
-    const res = await fetchWithRetry(env.FLY_FALLBACK_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-signature": sig },
-      body,
-      timeoutMs: 60_000,
+  // Strategy 2: пробуем прямо (на случай если когда-нибудь повезёт)
+  try {
+    const res = await fetchWithRetry(url, {
+      headers: { accept: "text/html", "user-agent": "Mozilla/5.0" },
       retries: 1,
     });
-    if (res.ok) {
-      const json = (await res.json()) as { content?: string };
-      return json.content ?? null;
-    }
+    if (res.ok) return await res.text();
+  } catch {
+    // ignore
   }
 
   console.warn("[avby] all fetch strategies failed for", url);
   return null;
 }
 
-async function hmac(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
-  return Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+function parseCursor(cursor: string | undefined): { slug: Slug; page: number } {
+  if (!cursor) return { slug: FACELIFT_SLUG, page: 1 };
+  const idx = cursor.indexOf(":");
+  if (idx < 0) return { slug: FACELIFT_SLUG, page: Math.max(1, Number(cursor) || 1) };
+  const slug = cursor.slice(0, idx) === PREFACELIFT_SLUG ? PREFACELIFT_SLUG : FACELIFT_SLUG;
+  return { slug, page: Math.max(1, Number(cursor.slice(idx + 1)) || 1) };
+}
+
+function nextCursor(
+  cur: { slug: Slug; page: number },
+  total: number,
+  pageSize: number,
+  mode: "daily" | "bootstrap",
+): string | null {
+  if (mode !== "bootstrap") return null;
+  const lastPage = Math.max(1, Math.ceil(total / pageSize));
+  if (cur.page < lastPage) return `${cur.slug}:${cur.page + 1}`;
+  if (cur.slug === FACELIFT_SLUG) return `${PREFACELIFT_SLUG}:1`;
+  return null;
 }
 
 export function makeAvbyParser(env: Env): SourceParser {
   return {
     source: "av",
     async scan({ cursor, mode }) {
-      const page = cursor ? Number(cursor) : 1;
-      const params = new URLSearchParams({
-        "brands[0][brand]": String(BMW_BRAND),
-        "brands[0][model]": String(BMW_5_MODEL),
-        "brands[0][generation]": String(E39_GENERATION),
-        "page": String(page),
-        "sort": "1",
-      });
-      const url = `${BASE}?${params.toString()}`;
-      const headers = {
-        accept: "application/json",
-        origin: "https://cars.av.by",
-        referer: "https://cars.av.by/",
-      };
-      const text = await rawFetch(env, url, headers);
-      if (!text) return { listings: [], nextCursor: null } satisfies ScanResult;
-
-      let json: AvbyResponse;
-      try {
-        json = JSON.parse(text) as AvbyResponse;
-      } catch {
-        return { listings: [], nextCursor: null };
-      }
-      const listings = (json.adverts ?? []).map(toNormalized);
-      const totalPages = json.pagination?.pageCount ?? 1;
-      const next = mode === "bootstrap" && page < totalPages ? String(page + 1) : null;
-      return { listings, nextCursor: next };
+      const cur = parseCursor(cursor);
+      const html = await rawFetch(env, buildUrl(cur.slug, cur.page));
+      if (!html) return { listings: [], nextCursor: null };
+      const { items, total } = parseListPage(html);
+      return { listings: items, nextCursor: nextCursor(cur, total, 24, mode) };
     },
   };
 }
 
-function toNormalized(a: AvbyAdvert): NormalizedListing {
-  const usd = a.price?.usd?.amount ?? null;
-  const byn = a.price?.byn?.amount ?? null;
-  const priceEur = usd != null ? toEur(Number(usd), "USD") : byn != null ? toEur(Number(byn), "BYN") : null;
+function parseListPage(html: string): { items: NormalizedListing[]; total: number } {
+  const root = parse(html);
+  const cards = root.querySelectorAll(".listing-item__wrap");
+  const items: NormalizedListing[] = [];
+  for (const card of cards) {
+    const item = parseCard(card);
+    if (item) items.push(item);
+  }
+  // Найти "317 объявлений" в тексте
+  const totalMatch = root.text.match(/(\d[\d\s]*)\s*объявлен/u);
+  const total = totalMatch ? Number(totalMatch[1]!.replace(/\s/g, "")) : items.length;
+  return { items, total };
+}
 
-  const photos: RawPhoto[] = (a.photos ?? [])
-    .map((p) => ({ url: p.big?.url ?? p.medium?.url ?? p.small?.url ?? "" }))
-    .filter((x) => x.url);
+function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> & {}): NormalizedListing | null {
+  if (!card) return null;
+  const linkEl = card.querySelector(".listing-item__link");
+  const href = linkEl?.getAttribute("href");
+  const idMatch = href?.match(/\/bmw\/5-seriya\/(\d+)/);
+  if (!href || !idMatch) return null;
+  const sourceId = idMatch[1]!;
 
-  const desc = a.description ?? null;
+  const title = (linkEl?.text || "BMW 5 серия").replace(/\s+/g, " ").trim();
+  const url = href.startsWith("http") ? href : `https://cars.av.by${href}`;
+
+  // params: [ "2001 г.", "автомат, 2,5 л, дизель, седан", "417 000 км" ]
+  const params = card.querySelectorAll(".listing-item__params > div").map((d) => d.text.trim());
+  const yearMatch = params[0]?.match(/(\d{4})/);
+  const year = yearMatch ? Number(yearMatch[1]) : null;
+  const transmission = /автомат/i.test(params[1] ?? "")
+    ? "automatic"
+    : /механ/i.test(params[1] ?? "")
+      ? "mechanical"
+      : null;
+  const mileageMatch = params[2]?.match(/(\d[\d\s]*)/u);
+  const mileageKm = mileageMatch ? Number(mileageMatch[1]!.replace(/\s/g, "")) : null;
+
+  const priceText = card.querySelector(".listing-item__price-primary")?.text || "";
+  const priceMatch = priceText.match(/(\d[\d\s]*)/u);
+  const priceByn = priceMatch ? Number(priceMatch[1]!.replace(/\s/g, "")) : null;
+  const priceEur = priceByn != null ? toEur(priceByn, "BYN") : null;
+
+  const region = card.querySelector(".listing-item__location")?.text?.trim() || null;
+  const description = card.querySelector(".listing-item__message")?.text?.trim() || null;
+
+  const photos: RawPhoto[] = card
+    .querySelectorAll(".carousel__wrapper img")
+    .map((img) => {
+      const dataSrcset = img.getAttribute("data-srcset") || "";
+      const dataSrc = img.getAttribute("data-src") || "";
+      // Берём 2x (advertmedium) если есть, иначе 1x (advertpreview)
+      const x2 = dataSrcset.match(/(https:\/\/avcdn\.av\.by\/[^\s"]+)/);
+      return { url: x2?.[1] ?? dataSrc };
+    })
+    .filter((p) => p.url && p.url.startsWith("http"));
+
+  const hasVinBadge = card.querySelectorAll(".badge").some((b) => /vin/i.test(b.text));
+  const vin = hasVinBadge ? extractVin(description) : extractVin(description);
 
   return {
     source: "av",
-    sourceId: String(a.id),
-    url: a.publicUrl ?? `https://cars.av.by/bmw/5-series/${a.id}`,
-    title: `${a.metadata?.brandName ?? "BMW"} ${a.metadata?.modelName ?? "5er"} ${a.metadata?.year ?? ""}`.trim(),
+    sourceId,
+    url,
+    title,
     priceEur,
-    priceRaw: usd != null ? `${usd} USD` : byn != null ? `${byn} BYN` : null,
-    currencyRaw: usd != null ? "USD" : byn != null ? "BYN" : null,
-    year: a.metadata?.year ?? null,
-    mileageKm: a.metadata?.mileage ?? null,
-    transmission: a.metadata?.transmissionTypeName ?? null,
-    bodyColor: a.metadata?.colorName ?? null,
-    region: a.locationName ?? a.metadata?.locationName ?? null,
-    vin: a.vin ?? extractVin(desc),
-    phoneNorm: extractPhone(desc),
-    description: desc,
+    priceRaw: priceByn != null ? `${priceByn} BYN` : null,
+    currencyRaw: "BYN",
+    year,
+    mileageKm,
+    transmission,
+    bodyColor: null,
+    region,
+    vin,
+    phoneNorm: extractPhone(description),
+    description,
     photos,
-    raw: a,
+    raw: { id: sourceId, hasVinBadge },
   };
 }
-
-type AvbyResponse = {
-  adverts?: AvbyAdvert[];
-  pagination?: { pageCount?: number };
-};
-
-type AvbyAdvert = {
-  id: number;
-  publicUrl?: string;
-  description?: string;
-  vin?: string;
-  locationName?: string;
-  price?: {
-    usd?: { amount: string | number };
-    byn?: { amount: string | number };
-  };
-  metadata?: {
-    brandName?: string;
-    modelName?: string;
-    year?: number;
-    mileage?: number;
-    transmissionTypeName?: string;
-    colorName?: string;
-    locationName?: string;
-  };
-  photos?: Array<{
-    small?: { url: string };
-    medium?: { url: string };
-    big?: { url: string };
-  }>;
-};
-
-export const _parsePrice = parsePrice;
