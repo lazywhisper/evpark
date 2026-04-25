@@ -20,7 +20,7 @@
     {
       "binding": "DB",
       "database_name": "e39-hunter-db",
-      "database_id": "REPLACE_WITH_D1_ID",
+      "database_id": "efc18d7b-d030-4509-9f98-652833fab610",
       "migrations_dir": "./src/api/migrations"
     }
   ],
@@ -33,7 +33,7 @@
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "REPLACE_WITH_KV_ID"
+      "id": "1543a2658ae4415581468dc10b927451"
     }
   ],
   "queues": {
