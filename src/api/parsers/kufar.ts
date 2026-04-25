@@ -97,16 +97,28 @@ export const kufarParser: SourceParser = {
       const m = NEXT_DATA_RE.exec(html);
       if (!m) return null;
       const data = JSON.parse(m[1]!) as { props?: { initialState?: { adView?: KufarAdView } } };
-      const ad = data.props?.initialState?.adView?.ad ?? data.props?.initialState?.adView;
+      const adView = data.props?.initialState?.adView;
+      // Структура: adView.data.{body, description, subject, images, ad_parameters...}
+      // На list-page это adView напрямую, но детальная вкладывает в .data
+      const ad = adView?.data ?? adView?.ad ?? adView;
       if (!ad) return null;
-      const params = new Map((ad.ad_parameters ?? []).map((p) => [p.p, p]));
+      const adAny = ad as Record<string, unknown>;
+      const params = new Map(
+        ((adAny.ad_parameters as KufarAd["ad_parameters"]) ?? []).map((p) => [p.p, p]),
+      );
       const region = String(params.get("region")?.vl ?? "") || null;
       const area = String(params.get("area")?.vl ?? "") || null;
-      const photos: RawPhoto[] = (ad.images ?? [])
+      const images = (adAny.images as KufarImage[] | undefined) ?? [];
+      const photos: RawPhoto[] = images
         .filter((i) => i.path || i.id)
         .map((i) => ({ url: imageUrl(i) }));
+      const description =
+        (adAny.body as string | undefined) ??
+        (adAny.description as string | undefined) ??
+        (adAny.body_short as string | undefined) ??
+        null;
       return {
-        description: ad.body ?? ad.body_short ?? null,
+        description,
         vin: String(params.get("full_vehicle_vin")?.v ?? "") || null,
         phoneNorm: null,
         region: [region, area].filter(Boolean).join(", ") || null,
