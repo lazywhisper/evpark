@@ -1,3 +1,4 @@
+import puppeteer from "@cloudflare/puppeteer";
 import { parse } from "node-html-parser";
 import type { Env } from "../env";
 import { fetchWithRetry } from "../lib/http";
@@ -35,8 +36,58 @@ function buildUrl(slug: Slug): string {
   return `https://cars.av.by/bmw/5-seriya/${slug}`;
 }
 
+async function browserFetchAllCards(env: Env, url: string, maxClicks = 30): Promise<string | null> {
+  // Cloudflare Browser Rendering: открываем SEO URL, кликаем "Показать ещё"
+  // пока не закончатся объявления. Возвращаем итоговый HTML.
+  if (!env.BROWSER) return null;
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+  try {
+    browser = await puppeteer.launch(env.BROWSER);
+    const page = await browser.newPage();
+    await page.setUserAgent(
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    );
+    await page.goto(url, { waitUntil: "networkidle0", timeout: 30_000 });
+    // Кликаем "Показать ещё" пока кнопка существует
+    for (let i = 0; i < maxClicks; i++) {
+      const btn = await page.$(".paging__button a");
+      if (!btn) break;
+      try {
+        await btn.click();
+        // Ждём пока появятся новые карточки
+        await page.waitForFunction(
+          (oldCount: number) =>
+            document.querySelectorAll(".listing-item__wrap").length > oldCount,
+          { timeout: 10_000, polling: 500 },
+          (await page.$$(".listing-item__wrap")).length,
+        );
+      } catch {
+        break;
+      }
+    }
+    const html = await page.content();
+    return html;
+  } catch (err) {
+    console.warn("[avby] browser-rendering failed:", err);
+    return null;
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
 async function rawFetch(env: Env, url: string): Promise<string | null> {
-  // Strategy 1: ScrapFly (основной канал — без него av.by нам недоступен)
+  // Strategy 1: Cloudflare Browser Rendering — кликает "Показать ещё" чтобы
+  // собрать всю выдачу. Платная фича Workers (включена при BROWSER binding).
+  const browserHtml = await browserFetchAllCards(env, url);
+  if (browserHtml) return browserHtml;
+
+  // Strategy 2: ScrapFly (fallback — может быть исчерпан квотой)
   if (env.SCRAPFLY_KEY) {
     const sf = new URL("https://api.scrapfly.io/scrape");
     sf.searchParams.set("key", env.SCRAPFLY_KEY);
