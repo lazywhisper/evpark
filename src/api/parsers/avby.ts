@@ -12,34 +12,27 @@ import type {
   SourceParser,
 } from "./types";
 
-// av.by защищён Cloudflare Bot Management. Прямой fetch с CF Workers получает
-// 503/468. JSON-эндпоинт /api/v1/items больше не отдаёт listing'и для нашего
-// поколения, но HTML-страница `/filter?brands[0][brand]=8&...&page=N` отдаёт
-// 24 карточки на страницу с разметкой listing-item__*. Парсим через ScrapFly.
+// av.by защищён Cloudflare Bot Management. Идём через ScrapFly.
 //
-// SEO-URL `/bmw/5-seriya/e39-restajling-2000-2004` параметр page игнорирует —
-// нужен именно `/filter?...&page=N`.
+// SEO-URL `/bmw/5-seriya/<gen-slug>` отдаёт 25 карточек + total. Pagination
+// в виде `?page=N` НЕ работает (всегда возвращает первую страницу). Кнопка
+// "Показать ещё" ведёт на /filter URL с подвешенными параметрами; без
+// session/cookie /filter возвращает generic-страницу всех авто.
 //
-// Cursor format: "<gen>:<page>". Bootstrap идёт facelift → pre-facelift.
-// Daily — только первая страница facelift.
+// Поэтому работаем по упрощённой схеме:
+//   - Берём первые 25 карточек facelift
+//   - В bootstrap — переходим на pre-facelift slug
+//   - Дальше pagination не делаем (получаем 25 facelift + 25 pre-facelift = 50)
+//
+// 50 объявлений с av.by лучше чем 0. Если позже найдём способ пагинации
+// (rendered_js + click "Показать ещё" в ScrapFly), вернёмся к большим объёмам.
 
-const BMW = 8;
-const MODEL_5_SERIES = 5865;
-const E39_FACELIFT = 12786; // (E39) Рестайлинг 2000-2004
-const E39_PREFACELIFT = 4439; // E39 1995-2000
+const FACELIFT_SLUG = "e39-restajling-2000-2004";
+const PREFACELIFT_SLUG = "e39-1995-2000";
+type Slug = typeof FACELIFT_SLUG | typeof PREFACELIFT_SLUG;
 
-type Generation = typeof E39_FACELIFT | typeof E39_PREFACELIFT;
-
-function buildUrl(generation: Generation, page: number, minYear?: number): string {
-  const params = new URLSearchParams();
-  params.set("brands[0][brand]", String(BMW));
-  params.set("brands[0][model]", String(MODEL_5_SERIES));
-  params.set("brands[0][generation]", String(generation));
-  if (minYear && minYear >= 1995 && minYear <= 2010) {
-    params.set("year_from", String(minYear));
-  }
-  if (page > 1) params.set("page", String(page));
-  return `https://cars.av.by/filter?${params.toString()}`;
+function buildUrl(slug: Slug): string {
+  return `https://cars.av.by/bmw/5-seriya/${slug}`;
 }
 
 async function rawFetch(env: Env, url: string): Promise<string | null> {
@@ -78,40 +71,25 @@ async function rawFetch(env: Env, url: string): Promise<string | null> {
   return null;
 }
 
-function parseCursor(cursor: string | undefined): { gen: Generation; page: number } {
-  if (!cursor) return { gen: E39_FACELIFT, page: 1 };
-  const idx = cursor.indexOf(":");
-  if (idx < 0) return { gen: E39_FACELIFT, page: Math.max(1, Number(cursor) || 1) };
-  const gen = Number(cursor.slice(0, idx)) === E39_PREFACELIFT ? E39_PREFACELIFT : E39_FACELIFT;
-  return { gen, page: Math.max(1, Number(cursor.slice(idx + 1)) || 1) };
+function parseCursor(cursor: string | undefined): Slug {
+  if (cursor === PREFACELIFT_SLUG) return PREFACELIFT_SLUG;
+  return FACELIFT_SLUG;
 }
 
-function nextCursor(
-  cur: { gen: Generation; page: number },
-  total: number,
-  pageSize: number,
-  mode: "daily" | "bootstrap",
-): string | null {
+function nextCursor(slug: Slug, mode: "daily" | "bootstrap"): string | null {
   if (mode !== "bootstrap") return null;
-  const lastPage = Math.max(1, Math.ceil(total / pageSize));
-  if (cur.page < lastPage) return `${cur.gen}:${cur.page + 1}`;
-  if (cur.gen === E39_FACELIFT) return `${E39_PREFACELIFT}:1`;
-  return null;
+  return slug === FACELIFT_SLUG ? PREFACELIFT_SLUG : null;
 }
 
 export function makeAvbyParser(env: Env): SourceParser {
   return {
     source: "av",
     async scan({ cursor, mode, rates }) {
-      const cur = parseCursor(cursor);
-      const minYear = Number(env.MIN_YEAR ?? "");
-      const html = await rawFetch(
-        env,
-        buildUrl(cur.gen, cur.page, Number.isFinite(minYear) ? minYear : undefined),
-      );
+      const slug = parseCursor(cursor);
+      const html = await rawFetch(env, buildUrl(slug));
       if (!html) return { listings: [], nextCursor: null };
-      const { items, total } = parseListPage(html, rates);
-      return { listings: items, nextCursor: nextCursor(cur, total, 24, mode) };
+      const { items } = parseListPage(html, rates);
+      return { listings: items, nextCursor: nextCursor(slug, mode) };
     },
     async fetchDetail(sourceId, url): Promise<ListingDetail | null> {
       const detailUrl = url.startsWith("http") ? url : `https://cars.av.by/bmw/5-seriya/${sourceId}`;
