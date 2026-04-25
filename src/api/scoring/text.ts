@@ -4,8 +4,19 @@ import type { Env } from "../env";
 import { getAnthropic, textModel } from "../lib/ai";
 import { TEXT_PROMPT } from "./prompts";
 
+const sellerProfileSchema = z.object({
+  communicationStyle: z.enum(["warm_owner", "professional", "salesy", "terse", "evasive"]),
+  knowledgeLevel: z.enum(["expert", "informed", "basic", "unclear"]),
+  negotiationPosture: z.enum(["firm", "open", "aggressive", "needs_quick_sale", "unknown"]),
+  emotionalTone: z.enum(["proud", "neutral", "rushed", "defensive", "salesy"]),
+  reasonForSelling: z.string().nullable(),
+  storyCoherence: z.enum(["consistent", "gaps", "contradictions"]),
+  trustSignals: z.array(z.string()).max(5),
+});
+
 const schema = z.object({
   sellerType: z.enum(["caring_owner", "flipper", "concealer", "unknown"]),
+  sellerProfile: sellerProfileSchema,
   ownershipDuration: z.enum(["long", "short", "unknown"]),
   ownersCount: z.number().int().nullable(),
   rustMentioned: z.boolean(),
@@ -17,7 +28,10 @@ const schema = z.object({
   abroad: z.boolean(),
   polishUp: z.boolean(),
   bodyConditionFromText: z.number().min(0).max(10),
-  keyQuotes: z.array(z.string()).max(5),
+  positiveQuotes: z.array(z.string()).max(3),
+  negativeQuotes: z.array(z.string()).max(3),
+  keyFacts: z.array(z.string()).max(4),
+  psychSummary: z.string().max(300),
 });
 
 export type TextResult = z.infer<typeof schema>;

@@ -1,4 +1,4 @@
-import type { Filters } from "@/lib/filters";
+import { SORT_LABELS, type Filters, type SortKey } from "@/lib/filters";
 
 const SOURCES: Array<{ key: "av" | "kufar" | "onliner" | "abw"; label: string }> = [
   { key: "av", label: "av.by" },
@@ -31,14 +31,27 @@ export function FilterBar({
 
   return (
     <div className="bg-card border border-border rounded-lg p-4 mb-6 space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-sm font-semibold text-muted-foreground">Фильтры</h2>
-        <div className="text-xs text-muted-foreground">
-          показано <span className="text-foreground font-medium">{filtered}</span> из {total}
-          <button
-            onClick={() => setFilters({})}
-            className="ml-3 text-primary hover:underline"
-          >
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <label className="flex items-center gap-2">
+            <span>сорт:</span>
+            <select
+              value={filters.sortBy ?? "score_desc"}
+              onChange={(e) => update({ sortBy: e.target.value as SortKey })}
+              className="bg-input border border-border rounded px-2 py-1 text-sm text-foreground"
+            >
+              {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+                <option key={k} value={k}>
+                  {SORT_LABELS[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span>
+            показано <span className="text-foreground font-medium">{filtered}</span> из {total}
+          </span>
+          <button onClick={() => setFilters({})} className="text-primary hover:underline">
             сбросить
           </button>
         </div>

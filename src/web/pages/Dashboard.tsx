@@ -94,7 +94,7 @@ export default function Dashboard() {
               Под фильтры ничего не подходит. Сбрось часть условий.
             </div>
           ) : (
-            <div className="grid gap-3">
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {filtered.map((row) => (
                 <Card key={row.l.id} row={row} />
               ))}
@@ -107,81 +107,126 @@ export default function Dashboard() {
 }
 
 function Card({ row }: { row: ListingRow }) {
-  const { l, s, thumbUrl } = row;
+  const { l, s } = row;
   const v = s?.visionFindingsJson ?? null;
   const t = s?.textFindingsJson ?? null;
   const flags = s?.redFlagsJson ?? [];
+  const photos = (row.photoUrls && row.photoUrls.length > 0)
+    ? row.photoUrls
+    : (row.thumbUrl ? [row.thumbUrl] : []);
+  const dateLabel = formatDate(l.firstSeenAt);
+
   return (
-    <Link
-      href={`/listings/${l.id}`}
-      className="block bg-card border border-border rounded-lg p-4 hover:border-primary transition-colors"
-    >
-      <div className="flex items-start gap-4">
-        {thumbUrl ? (
-          <img
-            src={thumbUrl}
-            alt=""
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            className="w-32 h-24 sm:w-40 sm:h-28 rounded object-cover bg-muted shrink-0"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
-            }}
-          />
-        ) : (
-          <div className="w-32 h-24 sm:w-40 sm:h-28 rounded bg-muted shrink-0" />
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-xs text-muted-foreground">{SOURCE_LABEL[l.source]}</span>
-            {s && (
-              <span className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary font-mono">
-                {s.overallScore}
-              </span>
-            )}
-            {s?.sellerType && (
-              <span className="text-xs">{SELLER_LABEL[s.sellerType]}</span>
-            )}
-            {v?.mPackage && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">
-                M-пакет
-              </span>
-            )}
-            {v?.wheelsModel && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
-                {v.wheelsModel}
-              </span>
-            )}
-            {t?.rustMentioned && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/20 text-destructive">
-                ржавчина
-              </span>
-            )}
-          </div>
-          <div className="font-medium truncate">{l.title}</div>
-          <div className="text-sm text-muted-foreground mt-1">
-            {l.year && <span>{l.year}</span>}
-            {l.mileageKm != null && <span> · {l.mileageKm.toLocaleString("ru")} км</span>}
-            {l.region && <span> · {l.region}</span>}
-          </div>
-          {flags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {flags.slice(0, 3).map((f, i) => (
-                <span
-                  key={i}
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive"
-                >
-                  {f}
-                </span>
-              ))}
-            </div>
+    <div className="bg-card border border-border rounded-lg overflow-hidden hover:border-primary transition-colors flex flex-col">
+      <PhotoCarousel photos={photos} alt={l.title} />
+      <Link href={`/listings/${l.id}`} className="block p-3 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="font-medium truncate flex-1">{l.title}</div>
+          {l.priceUsd != null && (
+            <div className="text-base font-semibold shrink-0">${l.priceUsd}</div>
           )}
         </div>
-        <div className="text-right shrink-0">
-          {l.priceUsd != null && <div className="text-lg font-semibold">${l.priceUsd}</div>}
-          {l.priceRaw && <div className="text-xs text-muted-foreground">{l.priceRaw}</div>}
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <span className="text-xs text-muted-foreground">{SOURCE_LABEL[l.source]}</span>
+          {s && (
+            <span className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary font-mono">
+              {s.overallScore}
+            </span>
+          )}
+          {s?.sellerType && <span className="text-xs">{SELLER_LABEL[s.sellerType]}</span>}
+          {v?.mPackage && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">
+              M-пакет
+            </span>
+          )}
+          {t?.rustMentioned && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/20 text-destructive">
+              ржавчина
+            </span>
+          )}
         </div>
-      </div>
-    </Link>
+        <div className="text-xs text-muted-foreground mt-1.5 truncate">
+          {l.year && <span>{l.year}</span>}
+          {l.mileageKm != null && <span> · {l.mileageKm.toLocaleString("ru")} км</span>}
+          {l.region && <span> · {l.region}</span>}
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
+          <span>подано: {dateLabel}</span>
+          {(v?.wheelsDescription || v?.wheelsModel) && (
+            <span className="truncate ml-2 text-right max-w-[60%]">
+              💿 {v.wheelsDescription ?? v.wheelsModel}
+            </span>
+          )}
+        </div>
+        {flags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {flags.slice(0, 3).map((f, i) => (
+              <span
+                key={i}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive"
+              >
+                {f}
+              </span>
+            ))}
+          </div>
+        )}
+      </Link>
+    </div>
   );
+}
+
+function PhotoCarousel({ photos, alt }: { photos: string[]; alt: string }) {
+  if (photos.length === 0) {
+    return <div className="w-full aspect-[4/3] bg-muted" />;
+  }
+  return (
+    <div
+      className="relative w-full aspect-[4/3] overflow-x-auto snap-x snap-mandatory flex bg-muted scrollbar-thin"
+      // блокируем всплытие клика на ссылку родителя при свайпе/скролле
+      onClick={(e) => e.stopPropagation()}
+    >
+      {photos.map((url, i) => (
+        <img
+          key={i}
+          src={url}
+          alt={alt}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className="w-full h-full object-cover snap-center shrink-0"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
+          }}
+        />
+      ))}
+      {photos.length > 1 && (
+        <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1 pointer-events-none">
+          {photos.map((_, i) => (
+            <span
+              key={i}
+              className="w-1.5 h-1.5 rounded-full bg-white/60 shadow"
+            />
+          ))}
+        </div>
+      )}
+      <div className="absolute top-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded pointer-events-none">
+        {photos.length}
+      </div>
+    </div>
+  );
+}
+
+function formatDate(ts: number | string | null | undefined): string {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (!Number.isFinite(d.getTime())) return "—";
+  const diffMs = Date.now() - d.getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const days = Math.floor(diffMs / dayMs);
+  if (days < 1) {
+    const hours = Math.max(1, Math.floor(diffMs / (60 * 60 * 1000)));
+    return hours === 1 ? "час назад" : `${hours} ч. назад`;
+  }
+  if (days === 1) return "вчера";
+  if (days < 7) return `${days} дн. назад`;
+  return d.toLocaleDateString("ru-BY", { day: "numeric", month: "short" });
 }

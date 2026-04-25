@@ -6,7 +6,7 @@ import { VISION_PROMPT } from "./prompts";
 
 const schema = z.object({
   mPackage: z.boolean(),
-  wheelsModel: z.string().nullable(),
+  wheelsDescription: z.string().nullable(),
   wheelsCategory: z.enum(["oem", "m_oem", "aftermarket", "steel", "unknown"]),
   wheelsConfidence: z.number().min(0).max(1),
   seatsCondition: z.number().min(0).max(10),

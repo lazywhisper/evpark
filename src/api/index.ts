@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { and, count, desc, eq, gte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type {
   ExecutionContext,
   ExportedHandlerScheduledHandler,
@@ -40,7 +40,7 @@ app.on(["GET", "POST"], "/auth/*", async (c) => {
 // === Listings (для Web UI) ==================================================
 app.get("/listings", async (c) => {
   const d = db(c.env.DB);
-  const limit = Math.min(Number(c.req.query("limit") ?? 50), 200);
+  const limit = Math.min(Number(c.req.query("limit") ?? 50), 2000);
   const minScore = Number(c.req.query("minScore") ?? 0);
   const rows = await d
     .select({ l: listings, s: scoring, thumbUrl: photos.url })
@@ -50,7 +50,27 @@ app.get("/listings", async (c) => {
     .orderBy(desc(scoring.overallScore), desc(listings.firstSeenAt))
     .limit(limit);
   const filtered = minScore > 0 ? rows.filter((r) => (r.s?.overallScore ?? 0) >= minScore) : rows;
-  return c.json({ listings: filtered });
+
+  // Подтягиваем до 8 фото на каждое объявление одним запросом, потом группируем.
+  const ids = filtered.map((r) => r.l.id);
+  const photoMap = new Map<string, string[]>();
+  if (ids.length > 0) {
+    const photoRows = await d
+      .select({ listingId: photos.listingId, url: photos.url, orderIdx: photos.orderIdx })
+      .from(photos)
+      .where(inArray(photos.listingId, ids))
+      .orderBy(photos.listingId, photos.orderIdx);
+    for (const p of photoRows) {
+      const arr = photoMap.get(p.listingId) ?? [];
+      if (arr.length < 8) arr.push(p.url);
+      photoMap.set(p.listingId, arr);
+    }
+  }
+  const enriched = filtered.map((r) => ({
+    ...r,
+    photoUrls: photoMap.get(r.l.id) ?? (r.thumbUrl ? [r.thumbUrl] : []),
+  }));
+  return c.json({ listings: enriched });
 });
 
 app.get("/listings/:id", async (c) => {

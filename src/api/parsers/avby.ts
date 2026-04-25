@@ -117,29 +117,40 @@ export function makeAvbyParser(env: Env): SourceParser {
 
 function parseDetailPage(html: string): ListingDetail {
   const root = parse(html);
-  // Описание: блок ".advert-info__description" или meta og:description
-  const descBlock =
-    root.querySelector(".advert-description__text") ||
-    root.querySelector(".js-description") ||
-    root.querySelector("[itemprop='description']");
-  const description = descBlock?.text?.trim() || null;
+  // Описание: блок .card__comment-text внутри .card__comment-body.
+  const descBlock = root.querySelector(".card__comment-text");
+  const descParagraphs = descBlock
+    ? descBlock.querySelectorAll("p").map((p) => p.text.trim()).filter(Boolean)
+    : [];
+  let description = descParagraphs.length > 0 ? descParagraphs.join("\n\n") : descBlock?.text?.trim() ?? null;
 
-  // VIN: либо в meta-блоках, либо в badge
+  // Дополнительно подкладываем перечень опций (комплектация) — это тоже сигнал для текста.
+  const optsTitle = root.querySelectorAll(".card__options-category").map((e) => e.text.trim());
+  const optsItems = root.querySelectorAll(".card__options li").map((e) => e.text.trim());
+  if (optsTitle.length > 0 || optsItems.length > 0) {
+    const optsLine = optsItems.slice(0, 50).join(", ");
+    if (description) description = `${description}\n\n[комплектация]\n${optsLine}`;
+    else description = `[комплектация]\n${optsLine}`;
+  }
+
+  // VIN
   const vinBlock = root.querySelector("[data-vin]") || root.querySelector(".vin");
   const vin = vinBlock?.getAttribute("data-vin") || extractVin(description ?? "");
 
-  // Фото детальной — больше превью из карусели
+  // Фото
   const photos: RawPhoto[] = root
-    .querySelectorAll("img.gallery__img, .gallery img, .carousel__wrapper img")
+    .querySelectorAll("img.gallery__img, .gallery img, .card-gallery img, img[data-src*='avcdn']")
     .map((img) => {
+      const dataSrcset = img.getAttribute("data-srcset") || "";
       const dataSrc = img.getAttribute("data-src") || img.getAttribute("src") || "";
-      return { url: dataSrc };
+      const x2 = dataSrcset.match(/(https:\/\/avcdn\.av\.by\/[^\s"]+)/);
+      return { url: x2?.[1] ?? dataSrc };
     })
     .filter((p) => p.url.startsWith("http") && /avcdn\.av\.by/.test(p.url));
 
   const region =
+    root.querySelector(".card__location")?.text?.trim() ||
     root.querySelector(".advert-info__region")?.text?.trim() ||
-    root.querySelector(".advert__location")?.text?.trim() ||
     null;
 
   return {

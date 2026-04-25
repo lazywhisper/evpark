@@ -171,6 +171,8 @@ export type VisionFindings = {
   redFlags?: string[];
   // новые
   mPackage?: boolean;
+  wheelsDescription?: string | null;
+  /** @deprecated использовали раньше — Vision слишком часто галлюцинировал каталожные Style-N */
   wheelsModel?: string | null;
   wheelsCategory?: "oem" | "m_oem" | "aftermarket" | "steel" | "unknown";
   wheelsConfidence?: number;
@@ -191,6 +193,21 @@ export type TextFindings = {
   abroad?: boolean;
   polishUp?: boolean;
   bodyConditionFromText?: number;
+  // Психологический портрет
+  sellerProfile?: {
+    communicationStyle?: "warm_owner" | "professional" | "salesy" | "terse" | "evasive";
+    knowledgeLevel?: "expert" | "informed" | "basic" | "unclear";
+    negotiationPosture?: "firm" | "open" | "aggressive" | "needs_quick_sale" | "unknown";
+    emotionalTone?: "proud" | "neutral" | "rushed" | "defensive" | "salesy";
+    reasonForSelling?: string | null;
+    storyCoherence?: "consistent" | "gaps" | "contradictions";
+    trustSignals?: string[];
+  };
+  positiveQuotes?: string[];
+  negativeQuotes?: string[];
+  keyFacts?: string[];
+  psychSummary?: string;
+  /** @deprecated был старым — заменили на positive/negative quotes */
   keyQuotes?: string[];
 };
 

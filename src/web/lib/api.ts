@@ -26,12 +26,23 @@ export type VisionFindings = {
   redFlags?: string[];
   // new
   mPackage?: boolean;
-  wheelsModel?: string | null;
+  wheelsDescription?: string | null;
+  wheelsModel?: string | null; // legacy
   wheelsCategory?: "oem" | "m_oem" | "aftermarket" | "steel" | "unknown";
   wheelsConfidence?: number;
   seatsCondition?: number;
   originalityVisible?: number;
   notes?: string | null;
+};
+
+export type SellerProfile = {
+  communicationStyle?: "warm_owner" | "professional" | "salesy" | "terse" | "evasive";
+  knowledgeLevel?: "expert" | "informed" | "basic" | "unclear";
+  negotiationPosture?: "firm" | "open" | "aggressive" | "needs_quick_sale" | "unknown";
+  emotionalTone?: "proud" | "neutral" | "rushed" | "defensive" | "salesy";
+  reasonForSelling?: string | null;
+  storyCoherence?: "consistent" | "gaps" | "contradictions";
+  trustSignals?: string[];
 };
 
 export type TextFindings = {
@@ -46,7 +57,12 @@ export type TextFindings = {
   abroad?: boolean;
   polishUp?: boolean;
   bodyConditionFromText?: number;
-  keyQuotes?: string[];
+  sellerProfile?: SellerProfile;
+  positiveQuotes?: string[];
+  negativeQuotes?: string[];
+  keyFacts?: string[];
+  psychSummary?: string;
+  keyQuotes?: string[]; // legacy
 };
 
 export type Scoring = {
@@ -72,7 +88,12 @@ export type Photo = {
   orderIdx: number;
 };
 
-export type ListingRow = { l: Listing; s: Scoring | null; thumbUrl: string | null };
+export type ListingRow = {
+  l: Listing;
+  s: Scoring | null;
+  thumbUrl: string | null;
+  photoUrls?: string[];
+};
 
 const base = "/api";
 
@@ -86,7 +107,7 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function fetchListings(minScore = 0, limit = 500) {
+export async function fetchListings(minScore = 0, limit = 2000) {
   return jsonFetch<{ listings: ListingRow[] }>(`/listings?minScore=${minScore}&limit=${limit}`);
 }
 

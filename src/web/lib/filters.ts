@@ -1,5 +1,16 @@
 import type { ListingRow } from "./api";
 
+export type SortKey =
+  | "score_desc"
+  | "score_asc"
+  | "price_asc"
+  | "price_desc"
+  | "year_desc"
+  | "year_asc"
+  | "mileage_asc"
+  | "mileage_desc"
+  | "newest";
+
 export type Filters = {
   minScore?: number;
   priceMin?: number;
@@ -13,9 +24,26 @@ export type Filters = {
   mPackageOnly?: boolean;
   hideRust?: boolean;
   hideAbroad?: boolean;
+  sortBy?: SortKey;
+};
+
+export const SORT_LABELS: Record<SortKey, string> = {
+  score_desc: "скор ↓",
+  score_asc: "скор ↑",
+  price_asc: "цена ↑",
+  price_desc: "цена ↓",
+  year_desc: "год ↓",
+  year_asc: "год ↑",
+  mileage_asc: "пробег ↑",
+  mileage_desc: "пробег ↓",
+  newest: "новые сверху",
 };
 
 export function applyFilters(rows: ListingRow[], f: Filters): ListingRow[] {
+  return sortRows(filterRows(rows, f), f.sortBy ?? "score_desc");
+}
+
+export function filterRows(rows: ListingRow[], f: Filters): ListingRow[] {
   return rows.filter((r) => {
     const score = r.s?.overallScore ?? 0;
     if (f.minScore != null && f.minScore > 0 && score < f.minScore) return false;
@@ -46,6 +74,46 @@ export function applyFilters(rows: ListingRow[], f: Filters): ListingRow[] {
 
     return true;
   });
+}
+
+function sortRows(rows: ListingRow[], by: SortKey): ListingRow[] {
+  const arr = [...rows];
+  const num = (v: number | null | undefined, fallback: number) =>
+    v == null || !Number.isFinite(v) ? fallback : v;
+  switch (by) {
+    case "score_desc":
+      arr.sort((a, b) => num(b.s?.overallScore, 0) - num(a.s?.overallScore, 0));
+      break;
+    case "score_asc":
+      arr.sort((a, b) => num(a.s?.overallScore, 999) - num(b.s?.overallScore, 999));
+      break;
+    case "price_asc":
+      arr.sort((a, b) => num(a.l.priceUsd, Infinity) - num(b.l.priceUsd, Infinity));
+      break;
+    case "price_desc":
+      arr.sort((a, b) => num(b.l.priceUsd, -1) - num(a.l.priceUsd, -1));
+      break;
+    case "year_desc":
+      arr.sort((a, b) => num(b.l.year, 0) - num(a.l.year, 0));
+      break;
+    case "year_asc":
+      arr.sort((a, b) => num(a.l.year, 9999) - num(b.l.year, 9999));
+      break;
+    case "mileage_asc":
+      arr.sort((a, b) => num(a.l.mileageKm, Infinity) - num(b.l.mileageKm, Infinity));
+      break;
+    case "mileage_desc":
+      arr.sort((a, b) => num(b.l.mileageKm, -1) - num(a.l.mileageKm, -1));
+      break;
+    case "newest":
+      arr.sort((a, b) => {
+        const ta = a.l.firstSeenAt ? new Date(a.l.firstSeenAt).getTime() : 0;
+        const tb = b.l.firstSeenAt ? new Date(b.l.firstSeenAt).getTime() : 0;
+        return tb - ta;
+      });
+      break;
+  }
+  return arr;
 }
 
 // Извлекаем уникальные регионы (область) из списка
