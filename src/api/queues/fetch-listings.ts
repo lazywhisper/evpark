@@ -30,12 +30,15 @@ export async function processFetchMessage(env: Env, d: DB, msg: FetchListingsMes
   let pages = 0;
   const errors: string[] = [];
 
+  let passedFilter = 0;
   try {
     const result = await parser.scan({ cursor: msg.cursor, mode: msg.mode });
     pages = 1;
+    const got = result.listings.length;
 
     for (const raw of result.listings) {
       if (!isLikelyE39(raw)) continue;
+      passedFilter++;
       try {
         const { id, isNew } = await upsertListing(d, raw);
         if (isNew) {
@@ -49,10 +52,15 @@ export async function processFetchMessage(env: Env, d: DB, msg: FetchListingsMes
       }
     }
 
+    console.log(
+      `[fetch:${msg.source}] cursor=${msg.cursor ?? "-"} got=${got} filtered=${passedFilter} new=${newCount} upd=${updCount} next=${result.nextCursor ?? "-"}`,
+    );
+
     if (result.nextCursor && msg.mode === "bootstrap") {
       await env.QUEUE_FETCH.send({ ...msg, cursor: result.nextCursor }, { delaySeconds: 5 });
     }
   } catch (err) {
+    console.error(`[fetch:${msg.source}] error`, err);
     errors.push(String(err));
   } finally {
     if (runId) {
