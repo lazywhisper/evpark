@@ -30,11 +30,14 @@ const E39_PREFACELIFT = 4439; // E39 1995-2000
 
 type Generation = typeof E39_FACELIFT | typeof E39_PREFACELIFT;
 
-function buildUrl(generation: Generation, page: number): string {
+function buildUrl(generation: Generation, page: number, minYear?: number): string {
   const params = new URLSearchParams();
   params.set("brands[0][brand]", String(BMW));
   params.set("brands[0][model]", String(MODEL_5_SERIES));
   params.set("brands[0][generation]", String(generation));
+  if (minYear && minYear >= 1995 && minYear <= 2010) {
+    params.set("year_from", String(minYear));
+  }
   if (page > 1) params.set("page", String(page));
   return `https://cars.av.by/filter?${params.toString()}`;
 }
@@ -101,7 +104,11 @@ export function makeAvbyParser(env: Env): SourceParser {
     source: "av",
     async scan({ cursor, mode, rates }) {
       const cur = parseCursor(cursor);
-      const html = await rawFetch(env, buildUrl(cur.gen, cur.page));
+      const minYear = Number(env.MIN_YEAR ?? "");
+      const html = await rawFetch(
+        env,
+        buildUrl(cur.gen, cur.page, Number.isFinite(minYear) ? minYear : undefined),
+      );
       if (!html) return { listings: [], nextCursor: null };
       const { items, total } = parseListPage(html, rates);
       return { listings: items, nextCursor: nextCursor(cur, total, 24, mode) };

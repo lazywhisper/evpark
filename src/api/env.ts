@@ -34,6 +34,7 @@ export interface Env {
   TEXT_MODEL?: string;
   PRICE_FLOOR_EUR?: string;
   PRICE_FLOOR_USD?: string;
+  MIN_YEAR?: string;
 
   // secrets
   BETTER_AUTH_SECRET: string;

@@ -38,8 +38,12 @@ export async function processFetchMessage(env: Env, d: DB, msg: FetchListingsMes
     pages = 1;
     const got = result.listings.length;
 
+    const minYear = Number(env.MIN_YEAR ?? "2001");
     for (const raw of result.listings) {
       if (!isLikelyE39(raw)) continue;
+      // Hard year gate: ниже MIN_YEAR (по умолчанию 2001) пропускаем целиком —
+      // не сохраняем и не скорим.
+      if (raw.year != null && Number.isFinite(minYear) && raw.year < minYear) continue;
       passedFilter++;
       try {
         const { id, isNew } = await upsertListing(d, raw);

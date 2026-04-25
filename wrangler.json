@@ -16,7 +16,8 @@
     "APP_TZ": "Europe/Minsk",
     "DEFAULT_THRESHOLD": "70",
     "VISION_MODEL": "claude-haiku-4-5",
-    "TEXT_MODEL": "claude-haiku-4-5"
+    "TEXT_MODEL": "claude-haiku-4-5",
+    "MIN_YEAR": "2001"
   },
   "d1_databases": [
     {
