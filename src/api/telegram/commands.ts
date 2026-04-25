@@ -14,6 +14,7 @@ const HELP = `Привет! Я ищу BMW E39 facelift на av.by, onliner.by, a
 /pause — поставить на паузу
 /resume — снять с паузы
 /stats — статистика за неделю
+/reset — очистить базу и начать сначала (только для владельца)
 /help — эта справка`;
 
 export async function handleCommand(env: Env, d: DB, chatId: string, username: string | undefined, text: string) {
@@ -65,6 +66,30 @@ export async function handleCommand(env: Env, d: DB, chatId: string, username: s
     }
     case "/stats": {
       await sendMessage(env, chatId, await buildStats(d));
+      return;
+    }
+    case "/reset": {
+      const owner = env.TG_OWNER_CHAT_ID?.trim();
+      if (owner && chatId !== owner) {
+        await sendMessage(env, chatId, "Эта команда только для владельца бота.");
+        return;
+      }
+      const stmts = [
+        "DELETE FROM reaction_features",
+        "DELETE FROM notifications_log",
+        "DELETE FROM scoring",
+        "DELETE FROM photos",
+        "DELETE FROM listings",
+        "DELETE FROM dedup_clusters",
+        "DELETE FROM fetch_runs",
+        "DELETE FROM phash_cache",
+      ];
+      for (const s of stmts) await env.DB.prepare(s).run();
+      await sendMessage(
+        env,
+        chatId,
+        "🧹 База очищена. Запусти /bootstrap чтобы собрать всё заново.",
+      );
       return;
     }
     default:
