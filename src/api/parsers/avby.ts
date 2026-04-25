@@ -11,20 +11,17 @@ import type {
   SourceParser,
 } from "./types";
 
-// av.by защищён Cloudflare Bot Management — только ScrapFly (residential proxy)
-// проходит надёжно.
+// av.by filter URL с точными ID из браузера:
+//   brand=8 (BMW), model=5865 (5-серия), generation=12786 (E39 рестайлинг)
 //
-// SEO-URL `/bmw/5-seriya/<gen-slug>` отдаёт 25 карточек. Pagination через
-// ?page=N не работает (всегда первая страница). Поэтому:
-//   - daily: берём 25 facelift карточек
-//   - bootstrap: facelift (25) → pre-facelift (25) = 50 итого
+// Этот URL с &page=N поддерживает пагинацию через ScrapFly (ASP-режим).
+// Без ScrapFly Cloudflare Bot Management блокирует запросы.
 
-const FACELIFT_SLUG = "e39-restajling-2000-2004";
-const PREFACELIFT_SLUG = "e39-1995-2000";
-type Slug = typeof FACELIFT_SLUG | typeof PREFACELIFT_SLUG;
+const FILTER_BASE =
+  "https://cars.av.by/filter?brands%5B0%5D%5Bbrand%5D=8&brands%5B0%5D%5Bmodel%5D=5865&brands%5B0%5D%5Bgeneration%5D=12786";
 
-function buildUrl(slug: Slug): string {
-  return `https://cars.av.by/bmw/5-seriya/${slug}`;
+function buildFilterUrl(page: number): string {
+  return page > 1 ? `${FILTER_BASE}&page=${page}` : FILTER_BASE;
 }
 
 async function rawFetch(env: Env, url: string): Promise<string | null> {
@@ -41,7 +38,7 @@ async function rawFetch(env: Env, url: string): Promise<string | null> {
       if (res.ok) {
         const json = (await res.json()) as { result?: { content?: string; status_code?: number } };
         if (json.result?.status_code && json.result.status_code >= 400) {
-          console.warn("[avby] scrapfly returned", json.result.status_code, "for", url);
+          console.warn("[avby] scrapfly status", json.result.status_code, url);
           return null;
         }
         if (json.result?.content) return json.result.content;
@@ -51,7 +48,24 @@ async function rawFetch(env: Env, url: string): Promise<string | null> {
     }
   }
 
-  // Strategy 2: прямой запрос с браузерными заголовками (редко проходит CF BM)
+  // Strategy 2: ScraperAPI (alternative — free tier 1000 req/mo)
+  if (env.SCRAPERAPI_KEY) {
+    const sa = new URL("https://api.scraperapi.com/");
+    sa.searchParams.set("api_key", env.SCRAPERAPI_KEY);
+    sa.searchParams.set("url", url);
+    sa.searchParams.set("country_code", "by");
+    try {
+      const res = await fetchWithRetry(sa.toString(), { retries: 1, timeoutMs: 60_000 });
+      if (res.ok) {
+        const html = await res.text();
+        if (html.includes("listing-item")) return html;
+      }
+    } catch (err) {
+      console.warn("[avby] scraperapi error:", err);
+    }
+  }
+
+  // Strategy 3: прямой запрос (редко проходит CF Bot Management)
   try {
     const res = await fetchWithRetry(url, {
       headers: {
@@ -59,16 +73,12 @@ async function rawFetch(env: Env, url: string): Promise<string | null> {
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "accept-language": "ru-BY,ru;q=0.9,en;q=0.8",
-        "cache-control": "no-cache",
       },
       retries: 1,
     });
     if (res.ok) {
       const html = await res.text();
-      // Если Cloudflare вернул challenge-страницу — отбрасываем
-      if (!html.includes("cf-browser-verification") && html.includes("listing-item")) {
-        return html;
-      }
+      if (html.includes("listing-item")) return html;
     }
   } catch {
     // ignore
@@ -78,25 +88,24 @@ async function rawFetch(env: Env, url: string): Promise<string | null> {
   return null;
 }
 
-function parseCursor(cursor: string | undefined): Slug {
-  if (cursor === PREFACELIFT_SLUG) return PREFACELIFT_SLUG;
-  return FACELIFT_SLUG;
-}
-
-function nextCursor(slug: Slug, mode: "daily" | "bootstrap"): string | null {
-  if (mode !== "bootstrap") return null;
-  return slug === FACELIFT_SLUG ? PREFACELIFT_SLUG : null;
-}
-
 export function makeAvbyParser(env: Env): SourceParser {
   return {
     source: "av",
     async scan({ cursor, mode, rates }) {
-      const slug = parseCursor(cursor);
-      const html = await rawFetch(env, buildUrl(slug));
+      const page = cursor ? parseInt(cursor, 10) : 1;
+      const html = await rawFetch(env, buildFilterUrl(page));
       if (!html) return { listings: [], nextCursor: null };
-      const { items } = parseListPage(html, rates);
-      return { listings: items, nextCursor: nextCursor(slug, mode) };
+      const { items, total } = parseListPage(html, rates);
+
+      console.log(`[avby] page=${page} items=${items.length} total=${total}`);
+
+      let next: string | null = null;
+      if (mode === "bootstrap" && items.length > 0) {
+        const maxPage = Math.min(Math.ceil(total / 25), 25); // cap at 25 pages ≈ 625 listings
+        if (page < maxPage) next = String(page + 1);
+      }
+
+      return { listings: items, nextCursor: next };
     },
     async fetchDetail(sourceId, url): Promise<ListingDetail | null> {
       const detailUrl = url.startsWith("http") ? url : `https://cars.av.by/bmw/5-seriya/${sourceId}`;
@@ -162,7 +171,10 @@ function parseListPage(html: string, rates: Rates): { items: NormalizedListing[]
   return { items, total };
 }
 
-function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> & {}, rates: Rates): NormalizedListing | null {
+function parseCard(
+  card: ReturnType<ReturnType<typeof parse>["querySelector"]> & {},
+  rates: Rates,
+): NormalizedListing | null {
   if (!card) return null;
   const linkEl = card.querySelector(".listing-item__link");
   const href = linkEl?.getAttribute("href");
@@ -202,8 +214,6 @@ function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> &
     })
     .filter((p) => p.url && p.url.startsWith("http"));
 
-  const vin = extractVin(description);
-
   return {
     source: "av",
     sourceId,
@@ -217,7 +227,7 @@ function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> &
     transmission,
     bodyColor: null,
     region,
-    vin,
+    vin: extractVin(description),
     phoneNorm: extractPhone(description),
     description,
     photos,

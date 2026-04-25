@@ -46,6 +46,7 @@ export interface Env {
   TG_WEBHOOK_SECRET: string;
   TG_OWNER_CHAT_ID?: string;
   SCRAPFLY_KEY?: string;
+  SCRAPERAPI_KEY?: string;
   FLY_FALLBACK_URL?: string;
   FLY_FALLBACK_HMAC?: string;
 }
