@@ -65,16 +65,17 @@ export async function handleCommand(env: Env, d: DB, chatId: string, username: s
       return;
     }
     case "/rescore": {
-      // Ставим в очередь все listing'и у которых нет описания или нет textFindings
+      // Находим listing'и без textFindings — удаляем их scoring строку и ставим заново
       const toRescore = await d
         .select({ id: listings.id })
         .from(listings)
         .leftJoin(scoring, eq(scoring.listingId, listings.id))
-        .where(sql`(${listings.description} IS NULL OR ${listings.description} = '') OR ${scoring.textFindingsJson} IS NULL`);
+        .where(sql`${scoring.textFindingsJson} IS NULL`);
       for (const r of toRescore) {
+        await d.delete(scoring).where(eq(scoring.listingId, r.id));
         await env.QUEUE_SCORE.send({ listingId: r.id });
       }
-      await sendMessage(env, chatId, `Поставил в очередь ${toRescore.length} объявлений для повторного анализа.`);
+      await sendMessage(env, chatId, `Поставил в очередь ${toRescore.length} объявлений на повторный анализ.`);
       return;
     }
     case "/bootstrap": {
