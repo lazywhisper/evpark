@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { DB } from "../database";
 import { listings, photos, scoring, type VisionFindings } from "../database/schema";
 import type { Env } from "../env";
-import { VISION_MODEL } from "../lib/ai";
+import { visionModel } from "../lib/ai";
 import { analyzePhotos } from "./vision";
 import { analyzeRedFlags, analyzeSeller } from "./text";
 
@@ -85,7 +85,7 @@ export async function scoreListing(env: Env, d: DB, listingId: string): Promise<
       visionFindingsJson: visionFindings,
       sellerType,
       redFlagsJson: redFlags,
-      modelVersion: VISION_MODEL,
+      modelVersion: visionModel(env),
       tokensUsed: tokens,
     })
     .onConflictDoUpdate({
@@ -97,7 +97,7 @@ export async function scoreListing(env: Env, d: DB, listingId: string): Promise<
         visionFindingsJson: visionFindings,
         sellerType,
         redFlagsJson: redFlags,
-        modelVersion: VISION_MODEL,
+        modelVersion: visionModel(env),
         scoredAt: new Date(),
         tokensUsed: tokens,
       },

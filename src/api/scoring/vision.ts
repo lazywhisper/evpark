@@ -1,7 +1,7 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import type { Env } from "../env";
-import { getAnthropic, VISION_MODEL } from "../lib/ai";
+import { getAnthropic, visionModel } from "../lib/ai";
 import { VISION_PROMPT } from "./prompts";
 
 const schema = z.object({
@@ -19,7 +19,7 @@ export async function analyzePhotos(env: Env, photoUrls: string[]): Promise<{ re
   const top = photoUrls.slice(0, 6);
   const anthropic = getAnthropic(env);
   const { object, usage } = await generateObject({
-    model: anthropic(VISION_MODEL),
+    model: anthropic(visionModel(env)),
     schema,
     messages: [
       {

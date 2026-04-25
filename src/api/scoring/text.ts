@@ -1,7 +1,7 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import type { Env } from "../env";
-import { getAnthropic, TEXT_MODEL } from "../lib/ai";
+import { getAnthropic, textModel } from "../lib/ai";
 import { REDFLAGS_PROMPT, SELLER_PROMPT } from "./prompts";
 
 const sellerSchema = z.object({
@@ -20,7 +20,7 @@ export type RedFlagsResult = z.infer<typeof redFlagsSchema>;
 export async function analyzeSeller(env: Env, description: string): Promise<{ result: SellerResult; tokens: number }> {
   const anthropic = getAnthropic(env);
   const { object, usage } = await generateObject({
-    model: anthropic(TEXT_MODEL),
+    model: anthropic(textModel(env)),
     schema: sellerSchema,
     messages: [
       { role: "system", content: SELLER_PROMPT },
@@ -36,7 +36,7 @@ export async function analyzeRedFlags(
 ): Promise<{ result: RedFlagsResult; tokens: number }> {
   const anthropic = getAnthropic(env);
   const { object, usage } = await generateObject({
-    model: anthropic(TEXT_MODEL),
+    model: anthropic(textModel(env)),
     schema: redFlagsSchema,
     messages: [
       { role: "system", content: REDFLAGS_PROMPT },

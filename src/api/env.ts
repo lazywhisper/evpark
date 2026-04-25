@@ -30,6 +30,8 @@ export interface Env {
   // vars
   APP_TZ: string;
   DEFAULT_THRESHOLD: string;
+  VISION_MODEL?: string;
+  TEXT_MODEL?: string;
 
   // secrets
   BETTER_AUTH_SECRET: string;
