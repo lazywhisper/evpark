@@ -1,6 +1,6 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { DB } from "../database";
-import { listings, photos, scoring, telegramUsers } from "../database/schema";
+import { listings, photos, scoring } from "../database/schema";
 import { findOrCreateCluster } from "../dedup/matcher";
 import { fingerprintFromUrl } from "../dedup/phash";
 import type { Env, ScoreListingMessage } from "../env";
@@ -63,10 +63,5 @@ export async function processScoreMessage(env: Env, d: DB, msg: ScoreListingMess
     await scoreListing(env, d, listingId);
   }
 
-  // Кандидат на нотификацию: проверяем активных подписчиков
-  const sub = await d.select().from(telegramUsers).where(eq(telegramUsers.paused, false));
-  const tgChatIds = sub.map((s) => s.tgChatId);
-  if (tgChatIds.length > 0) {
-    await env.QUEUE_NOTIFY.send({ listingId, tgChatIds });
-  }
+  await env.QUEUE_NOTIFY.send({ listingId });
 }

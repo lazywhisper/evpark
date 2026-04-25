@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, gte, sql } from "drizzle-orm";
 import type {
   ExecutionContext,
   ExportedHandlerScheduledHandler,
@@ -10,7 +10,7 @@ import type {
 
 import { createAuth } from "./auth";
 import { db } from "./database";
-import { listings, notificationsLog, scoring } from "./database/schema";
+import { fetchRuns, listings, notificationsLog, scoring } from "./database/schema";
 import type {
   AppContext,
   Env,
@@ -65,11 +65,82 @@ app.get("/notifications", async (c) => {
   const d = db(c.env.DB);
   const limit = Math.min(Number(c.req.query("limit") ?? 50), 200);
   const rows = await d
-    .select()
+    .select({
+      id: notificationsLog.id,
+      listingId: notificationsLog.listingId,
+      tgChatId: notificationsLog.tgChatId,
+      sentAt: notificationsLog.sentAt,
+      messageId: notificationsLog.messageId,
+      reaction: notificationsLog.reaction,
+      reactionAt: notificationsLog.reactionAt,
+      listingTitle: listings.title,
+      listingUrl: listings.url,
+      listingPriceEur: listings.priceEur,
+    })
     .from(notificationsLog)
+    .leftJoin(listings, eq(listings.id, notificationsLog.listingId))
     .orderBy(desc(notificationsLog.sentAt))
     .limit(limit);
   return c.json({ notifications: rows });
+});
+
+app.get("/stats", async (c) => {
+  const d = db(c.env.DB);
+  const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const [totalListings] = await d.select({ n: count() }).from(listings);
+  const [newLast7d] = await d
+    .select({ n: count() })
+    .from(listings)
+    .where(gte(listings.firstSeenAt, since7d));
+  const [notifLast7d] = await d
+    .select({ n: count() })
+    .from(notificationsLog)
+    .where(gte(notificationsLog.sentAt, since7d));
+  const [scoredTotal] = await d.select({ n: count() }).from(scoring);
+  const [avgScore] = await d
+    .select({ avg: sql<number>`avg(${scoring.overallScore})` })
+    .from(scoring);
+
+  const bySource = await d
+    .select({ source: listings.source, n: count() })
+    .from(listings)
+    .groupBy(listings.source);
+
+  const recentRuns = await d
+    .select()
+    .from(fetchRuns)
+    .where(gte(fetchRuns.startedAt, since24h))
+    .orderBy(desc(fetchRuns.startedAt))
+    .limit(20);
+
+  const thumbsUp = await d
+    .select({ n: count() })
+    .from(notificationsLog)
+    .where(and(eq(notificationsLog.reaction, "up"), gte(notificationsLog.sentAt, since7d)));
+  const thumbsDown = await d
+    .select({ n: count() })
+    .from(notificationsLog)
+    .where(and(eq(notificationsLog.reaction, "down"), gte(notificationsLog.sentAt, since7d)));
+
+  return c.json({
+    listings: {
+      total: totalListings?.n ?? 0,
+      newLast7d: newLast7d?.n ?? 0,
+      bySource: Object.fromEntries(bySource.map((r) => [r.source, r.n])),
+    },
+    scoring: {
+      total: scoredTotal?.n ?? 0,
+      avgScore: avgScore?.avg != null ? Math.round(Number(avgScore.avg)) : null,
+    },
+    notifications: {
+      last7d: notifLast7d?.n ?? 0,
+      thumbsUp: thumbsUp?.[0]?.n ?? 0,
+      thumbsDown: thumbsDown?.[0]?.n ?? 0,
+    },
+    recentRuns,
+  });
 });
 
 // === Manual triggers (защищены TG_WEBHOOK_SECRET для простоты) ==============

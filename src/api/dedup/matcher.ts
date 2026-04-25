@@ -43,15 +43,13 @@ export async function findOrCreateCluster(
     }
   }
 
-  // 3. pHash — выбираем кандидатов с похожим первым байтом
+  // 3. pHash — точное совпадение плюс hamming ≤ 6
   if (phashes.length > 0) {
-    const prefixes = phashes.map((h) => h.slice(0, 4));
     const candidates = await d
       .select({ id: photos.id, listingId: photos.listingId, phash: photos.phash })
       .from(photos)
       .where(inArray(photos.phash, phashes))
       .limit(50);
-    // Точный hamming-чек на полных хешах
     for (const c of candidates) {
       if (!c.phash) continue;
       const dist = phashes.map((h) => hamming(h, c.phash!)).reduce((a, b) => Math.min(a, b), Infinity);
@@ -60,10 +58,6 @@ export async function findOrCreateCluster(
         if (lst[0]?.dedupClusterId)
           return { kind: "joined", clusterId: lst[0].dedupClusterId, canonicalId: lst[0].id };
       }
-    }
-    // Грубый prefix-чек
-    if (prefixes.length > 0) {
-      // skip — оставлено для будущей оптимизации с FTS
     }
   }
 

@@ -62,6 +62,9 @@ export type Notification = {
   tgChatId: string;
   sentAt: number;
   reaction: "up" | "down" | null;
+  listingTitle: string | null;
+  listingUrl: string | null;
+  listingPriceEur: number | null;
 };
 export async function fetchNotifications() {
   return jsonFetch<{ notifications: Notification[] }>(`/notifications`);

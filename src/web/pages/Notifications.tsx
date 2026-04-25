@@ -19,11 +19,16 @@ export default function Notifications() {
       ) : (
         <ul className="space-y-2">
           {items.map((n) => (
-            <li key={n.id} className="bg-card border border-border rounded p-3 text-sm flex items-center justify-between">
-              <Link href={`/listings/${n.listingId}`} className="text-primary hover:underline">
-                {n.listingId}
-              </Link>
-              <span className="text-muted-foreground">
+            <li key={n.id} className="bg-card border border-border rounded p-3 text-sm flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <Link href={`/listings/${n.listingId}`} className="text-primary hover:underline font-medium truncate block">
+                  {n.listingTitle ?? n.listingId}
+                </Link>
+                {n.listingPriceEur != null && (
+                  <span className="text-muted-foreground text-xs">~{n.listingPriceEur} €</span>
+                )}
+              </div>
+              <span className="text-muted-foreground shrink-0 text-right">
                 {new Date(n.sentAt).toLocaleString("ru-BY")}
                 {n.reaction === "up" && " · 👍"}
                 {n.reaction === "down" && " · 👎"}

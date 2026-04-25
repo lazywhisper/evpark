@@ -12,7 +12,7 @@ export type FetchListingsMessage =
 
 export type ScoreListingMessage = { listingId: string };
 
-export type NotifyMessage = { listingId: string; tgChatIds: string[] };
+export type NotifyMessage = { listingId: string };
 
 import type { SourceName } from "./database/schema";
 
