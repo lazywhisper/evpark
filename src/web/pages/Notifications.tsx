@@ -24,8 +24,8 @@ export default function Notifications() {
                 <Link href={`/listings/${n.listingId}`} className="text-primary hover:underline font-medium truncate block">
                   {n.listingTitle ?? n.listingId}
                 </Link>
-                {n.listingPriceEur != null && (
-                  <span className="text-muted-foreground text-xs">~{n.listingPriceEur} €</span>
+                {n.listingPriceUsd != null && (
+                  <span className="text-muted-foreground text-xs">${n.listingPriceUsd}</span>
                 )}
               </div>
               <span className="text-muted-foreground shrink-0 text-right">

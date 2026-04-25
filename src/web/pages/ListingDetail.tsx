@@ -52,7 +52,7 @@ export default function ListingDetail() {
         {l.mileageKm != null && <span>{l.mileageKm.toLocaleString("ru")} км</span>}
         {l.transmission && <span>{l.transmission}</span>}
         {l.region && <span>{l.region}</span>}
-        {l.priceEur != null && <span className="text-foreground font-medium">~{l.priceEur} €</span>}
+        {l.priceUsd != null && <span className="text-foreground font-medium">${l.priceUsd}</span>}
       </div>
 
       {photos.length > 0 && (

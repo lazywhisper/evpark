@@ -52,12 +52,12 @@ export function FilterBar({
           max={100}
         />
         <NumField
-          label="Цена от €"
+          label="Цена от $"
           value={filters.priceMin}
           onChange={(v) => update({ priceMin: v })}
         />
         <NumField
-          label="Цена до €"
+          label="Цена до $"
           value={filters.priceMax}
           onChange={(v) => update({ priceMax: v })}
         />

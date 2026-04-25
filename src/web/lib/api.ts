@@ -3,7 +3,7 @@ export type Listing = {
   source: "av" | "onliner" | "abw" | "kufar";
   url: string;
   title: string;
-  priceEur: number | null;
+  priceUsd: number | null;
   priceRaw: string | null;
   year: number | null;
   mileageKm: number | null;
@@ -104,7 +104,7 @@ export type Notification = {
   reaction: "up" | "down" | null;
   listingTitle: string | null;
   listingUrl: string | null;
-  listingPriceEur: number | null;
+  listingPriceUsd: number | null;
 };
 export async function fetchNotifications() {
   return jsonFetch<{ notifications: Notification[] }>(`/notifications`);

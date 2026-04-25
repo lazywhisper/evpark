@@ -9,13 +9,12 @@ import { getParser } from "../parsers/registry";
 import { scoreListing } from "../scoring/score";
 
 // $6500 минимум — машины ниже этого не рассматриваем.
-// Ценник в EUR ≈ priceUsd × 0.92. $6500 ≈ €5980.
-const PRICE_FLOOR_EUR_DEFAULT = 5980;
+const PRICE_FLOOR_USD_DEFAULT = 6500;
 
-function priceFloorEur(env: Env): number {
-  const raw = env.PRICE_FLOOR_EUR?.trim();
+function priceFloorUsd(env: Env): number {
+  const raw = env.PRICE_FLOOR_USD?.trim() ?? env.PRICE_FLOOR_EUR?.trim();
   const n = raw ? Number(raw) : NaN;
-  return Number.isFinite(n) ? n : PRICE_FLOOR_EUR_DEFAULT;
+  return Number.isFinite(n) ? n : PRICE_FLOOR_USD_DEFAULT;
 }
 
 export async function processScoreMessage(env: Env, d: DB, msg: ScoreListingMessage) {
@@ -23,9 +22,9 @@ export async function processScoreMessage(env: Env, d: DB, msg: ScoreListingMess
   if (!listingId) return;
 
   // Цена-гейт: дешевле порога не скорим и не уведомляем — экономим Claude-токены.
-  const lstPre = (await d.select({ priceEur: listings.priceEur }).from(listings).where(eq(listings.id, listingId)).limit(1))[0];
-  if (lstPre?.priceEur != null && lstPre.priceEur < priceFloorEur(env)) {
-    console.log(`[score] skip ${listingId} priceEur=${lstPre.priceEur} < floor`);
+  const lstPre = (await d.select({ priceUsd: listings.priceUsd }).from(listings).where(eq(listings.id, listingId)).limit(1))[0];
+  if (lstPre?.priceUsd != null && lstPre.priceUsd < priceFloorUsd(env)) {
+    console.log(`[score] skip ${listingId} priceUsd=${lstPre.priceUsd} < floor`);
     return;
   }
 
@@ -103,7 +102,7 @@ export async function processScoreMessage(env: Env, d: DB, msg: ScoreListingMess
       sourceId: lst.sourceId,
       url: lst.url,
       title: lst.title,
-      priceEur: lst.priceEur,
+      priceUsd: lst.priceUsd,
       priceRaw: lst.priceRaw,
       currencyRaw: lst.currencyRaw,
       year: lst.year,

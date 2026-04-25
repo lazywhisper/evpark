@@ -17,7 +17,7 @@ function escape(s: string): string {
 export function formatListingCaption(l: Listing, s: Score | null): string {
   const lines: string[] = [];
   lines.push(`<b>${escape(l.title)}</b>`);
-  if (l.priceEur != null) lines.push(`💶 ~${l.priceEur} EUR · ${escape(l.priceRaw ?? "")}`);
+  if (l.priceUsd != null) lines.push(`💵 $${l.priceUsd} · ${escape(l.priceRaw ?? "")}`);
   if (l.year) lines.push(`📅 ${l.year}${l.mileageKm ? ` · ${l.mileageKm.toLocaleString("ru")} км` : ""}`);
   if (l.region) lines.push(`📍 ${escape(l.region)}`);
   lines.push(`🏷 ${SOURCE_NAME[l.source] ?? l.source}`);

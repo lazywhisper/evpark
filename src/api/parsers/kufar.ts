@@ -1,5 +1,7 @@
 import { fetchWithRetry } from "../lib/http";
-import { extractPhone, extractVin, toEur } from "./normalize";
+import type { Rates } from "../lib/rates";
+import { toUsd } from "../lib/rates";
+import { extractPhone, extractVin } from "./normalize";
 import type {
   ListingDetail,
   NormalizedListing,
@@ -72,10 +74,10 @@ function nextCursor(
 
 export const kufarParser: SourceParser = {
   source: "kufar",
-  async scan({ cursor, mode }) {
+  async scan({ cursor, mode, rates }) {
     const { slug, token } = parseCursor(cursor);
     const page = await fetchSlug(slug, token);
-    const listings = page.ads.map(toNormalized);
+    const listings = page.ads.map((a) => toNormalized(a, rates));
     return { listings, nextCursor: nextCursor(slug, page, mode) } satisfies ScanResult;
   },
   async fetchDetail(sourceId): Promise<ListingDetail | null> {
@@ -126,7 +128,7 @@ function imageUrl(img: KufarImage): string {
   return `https://rms.kufar.by/v1/gallery/${img.path ?? img.id ?? ""}`;
 }
 
-function toNormalized(ad: KufarAd): NormalizedListing {
+function toNormalized(ad: KufarAd, rates: Rates): NormalizedListing {
   const params = new Map((ad.ad_parameters ?? []).map((p) => [p.p, p]));
   const get = (k: string) => params.get(k);
 
@@ -158,8 +160,8 @@ function toNormalized(ad: KufarAd): NormalizedListing {
   const priceBynCents = ad.price_byn != null ? Number(ad.price_byn) : null;
   const priceByn =
     priceBynCents != null && Number.isFinite(priceBynCents) ? priceBynCents / 100 : null;
-  const priceEur =
-    priceUsd != null ? toEur(priceUsd, "USD") : priceByn != null ? toEur(priceByn, "BYN") : null;
+  const priceUsdFinal =
+    priceUsd != null ? toUsd(priceUsd, "USD", rates) : priceByn != null ? toUsd(priceByn, "BYN", rates) : null;
 
   const photos: RawPhoto[] = (ad.images ?? [])
     .filter((i) => i.path || i.id)
@@ -174,7 +176,7 @@ function toNormalized(ad: KufarAd): NormalizedListing {
     sourceId: String(ad.ad_id ?? ad.list_id),
     url: ad.ad_link ?? `https://auto.kufar.by/vi/${ad.ad_id ?? ad.list_id}`,
     title: ad.subject ?? "BMW",
-    priceEur,
+    priceUsd: priceUsdFinal,
     priceRaw:
       priceUsd != null ? `${priceUsd} USD` : priceByn != null ? `${priceByn} BYN` : null,
     currencyRaw: ad.currency ?? "USD",

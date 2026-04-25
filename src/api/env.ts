@@ -33,6 +33,7 @@ export interface Env {
   VISION_MODEL?: string;
   TEXT_MODEL?: string;
   PRICE_FLOOR_EUR?: string;
+  PRICE_FLOOR_USD?: string;
 
   // secrets
   BETTER_AUTH_SECRET: string;

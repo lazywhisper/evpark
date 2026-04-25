@@ -5,6 +5,7 @@ import type { Env, FetchListingsMessage } from "../env";
 import { isLikelyE39 } from "../filter/e39";
 import { newId } from "../lib/id";
 import { acquireToken } from "../lib/ratelimit";
+import { getRates } from "../lib/rates";
 import { getParser } from "../parsers/registry";
 import type { NormalizedListing } from "../parsers/types";
 
@@ -32,7 +33,8 @@ export async function processFetchMessage(env: Env, d: DB, msg: FetchListingsMes
 
   let passedFilter = 0;
   try {
-    const result = await parser.scan({ cursor: msg.cursor, mode: msg.mode });
+    const rates = await getRates(env);
+    const result = await parser.scan({ cursor: msg.cursor, mode: msg.mode, rates });
     pages = 1;
     const got = result.listings.length;
 
@@ -91,7 +93,7 @@ async function upsertListing(d: DB, raw: NormalizedListing): Promise<{ id: strin
       .update(listings)
       .set({
         title: raw.title,
-        priceEur: raw.priceEur,
+        priceUsd: raw.priceUsd,
         priceRaw: raw.priceRaw,
         currencyRaw: raw.currencyRaw,
         year: raw.year,

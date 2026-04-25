@@ -1,4 +1,5 @@
 import type { SourceName } from "../database/schema";
+import type { Rates } from "../lib/rates";
 
 export type RawPhoto = { url: string; width?: number; height?: number };
 
@@ -7,7 +8,7 @@ export type NormalizedListing = {
   sourceId: string;
   url: string;
   title: string;
-  priceEur: number | null;
+  priceUsd: number | null;
   priceRaw: string | null;
   currencyRaw: string | null;
   year: number | null;
@@ -37,7 +38,11 @@ export type ListingDetail = {
 
 export interface SourceParser {
   readonly source: SourceName;
-  scan(opts: { cursor?: string; mode: "daily" | "bootstrap" }): Promise<ScanResult>;
+  scan(opts: {
+    cursor?: string;
+    mode: "daily" | "bootstrap";
+    rates: Rates;
+  }): Promise<ScanResult>;
   /**
    * Fetch the full detail page for a listing — used during scoring to get
    * the full description (list-page bodies are usually truncated/missing).

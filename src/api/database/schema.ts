@@ -106,7 +106,7 @@ export const listings = sqliteTable(
     sourceId: text("source_id").notNull(),
     url: text("url").notNull(),
     title: text("title").notNull(),
-    priceEur: real("price_eur"),
+    priceUsd: real("price_usd"),
     priceRaw: text("price_raw"),
     currencyRaw: text("currency_raw"),
     year: integer("year"),

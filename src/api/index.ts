@@ -81,7 +81,7 @@ app.get("/notifications", async (c) => {
       reactionAt: notificationsLog.reactionAt,
       listingTitle: listings.title,
       listingUrl: listings.url,
-      listingPriceEur: listings.priceEur,
+      listingPriceUsd: listings.priceUsd,
     })
     .from(notificationsLog)
     .leftJoin(listings, eq(listings.id, notificationsLog.listingId))
@@ -154,6 +154,26 @@ function checkSecret(c: { req: { header: (k: string) => string | undefined }; en
   const auth = c.req.header("authorization");
   return auth === `Bearer ${c.env.TG_WEBHOOK_SECRET}`;
 }
+
+// Опасный эндпоинт: очищает всё кроме telegram_users/preferences/sources.
+// Используется чтобы стартануть с чистого листа после крупных изменений
+// (например смена валюты/scoring модели).
+app.post("/dev/reset", async (c) => {
+  if (!checkSecret(c)) return c.json({ error: "unauthorized" }, 401);
+  const db = c.env.DB;
+  const stmts = [
+    "DELETE FROM reaction_features",
+    "DELETE FROM notifications_log",
+    "DELETE FROM scoring",
+    "DELETE FROM photos",
+    "DELETE FROM listings",
+    "DELETE FROM dedup_clusters",
+    "DELETE FROM fetch_runs",
+    "DELETE FROM phash_cache",
+  ];
+  for (const s of stmts) await db.prepare(s).run();
+  return c.json({ ok: true, cleared: stmts.length });
+});
 
 app.post("/scan/now", async (c) => {
   if (!checkSecret(c)) return c.json({ error: "unauthorized" }, 401);

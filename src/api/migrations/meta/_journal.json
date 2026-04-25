@@ -15,6 +15,13 @@
       "when": 1777134537833,
       "tag": "0001_goofy_ser_duncan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1777135000000,
+      "tag": "0002_rename_price_eur_to_usd",
+      "breakpoints": true
     }
   ]
 }

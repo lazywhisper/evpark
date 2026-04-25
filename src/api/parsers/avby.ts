@@ -1,7 +1,9 @@
 import { parse } from "node-html-parser";
 import type { Env } from "../env";
 import { fetchWithRetry } from "../lib/http";
-import { extractPhone, extractVin, toEur } from "./normalize";
+import type { Rates } from "../lib/rates";
+import { toUsd } from "../lib/rates";
+import { extractPhone, extractVin } from "./normalize";
 import type {
   ListingDetail,
   NormalizedListing,
@@ -97,11 +99,11 @@ function nextCursor(
 export function makeAvbyParser(env: Env): SourceParser {
   return {
     source: "av",
-    async scan({ cursor, mode }) {
+    async scan({ cursor, mode, rates }) {
       const cur = parseCursor(cursor);
       const html = await rawFetch(env, buildUrl(cur.gen, cur.page));
       if (!html) return { listings: [], nextCursor: null };
-      const { items, total } = parseListPage(html);
+      const { items, total } = parseListPage(html, rates);
       return { listings: items, nextCursor: nextCursor(cur, total, 24, mode) };
     },
     async fetchDetail(sourceId, url): Promise<ListingDetail | null> {
@@ -149,12 +151,12 @@ function parseDetailPage(html: string): ListingDetail {
   };
 }
 
-function parseListPage(html: string): { items: NormalizedListing[]; total: number } {
+function parseListPage(html: string, rates: Rates): { items: NormalizedListing[]; total: number } {
   const root = parse(html);
   const cards = root.querySelectorAll(".listing-item__wrap");
   const items: NormalizedListing[] = [];
   for (const card of cards) {
-    const item = parseCard(card);
+    const item = parseCard(card, rates);
     if (item) items.push(item);
   }
   // Найти "317 объявлений" в тексте
@@ -163,7 +165,7 @@ function parseListPage(html: string): { items: NormalizedListing[]; total: numbe
   return { items, total };
 }
 
-function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> & {}): NormalizedListing | null {
+function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> & {}, rates: Rates): NormalizedListing | null {
   if (!card) return null;
   const linkEl = card.querySelector(".listing-item__link");
   const href = linkEl?.getAttribute("href");
@@ -189,7 +191,7 @@ function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> &
   const priceText = card.querySelector(".listing-item__price-primary")?.text || "";
   const priceMatch = priceText.match(/(\d[\d\s]*)/u);
   const priceByn = priceMatch ? Number(priceMatch[1]!.replace(/\s/g, "")) : null;
-  const priceEur = priceByn != null ? toEur(priceByn, "BYN") : null;
+  const priceUsd = priceByn != null ? toUsd(priceByn, "BYN", rates) : null;
 
   const region = card.querySelector(".listing-item__location")?.text?.trim() || null;
   const description = card.querySelector(".listing-item__message")?.text?.trim() || null;
@@ -213,7 +215,7 @@ function parseCard(card: ReturnType<ReturnType<typeof parse>["querySelector"]> &
     sourceId,
     url,
     title,
-    priceEur,
+    priceUsd,
     priceRaw: priceByn != null ? `${priceByn} BYN` : null,
     currencyRaw: "BYN",
     year,

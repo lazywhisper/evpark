@@ -57,7 +57,7 @@ function PriceVsYear({ rows }: { rows: ListingRow[] }) {
   const H = 140;
   const PAD = 24;
   const valid = rows.filter(
-    (r) => r.l.year != null && r.l.priceEur != null && r.l.priceEur > 0,
+    (r) => r.l.year != null && r.l.priceUsd != null && r.l.priceUsd > 0,
   );
   if (valid.length === 0) {
     return (
@@ -69,7 +69,7 @@ function PriceVsYear({ rows }: { rows: ListingRow[] }) {
   const minY = Math.min(...valid.map((r) => r.l.year!));
   const maxY = Math.max(...valid.map((r) => r.l.year!));
   const minP = 0;
-  const maxP = Math.max(...valid.map((r) => r.l.priceEur!));
+  const maxP = Math.max(...valid.map((r) => r.l.priceUsd!));
   const xScale = (y: number) => PAD + ((y - minY) / Math.max(1, maxY - minY)) * (W - 2 * PAD);
   const yScale = (p: number) =>
     H - PAD - ((p - minP) / Math.max(1, maxP - minP)) * (H - 2 * PAD);
@@ -81,7 +81,7 @@ function PriceVsYear({ rows }: { rows: ListingRow[] }) {
   };
 
   return (
-    <Card title="Цена € vs Год">
+    <Card title="Цена $ vs Год">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         {/* axes */}
         <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} stroke="currentColor" strokeOpacity="0.2" />
@@ -94,7 +94,7 @@ function PriceVsYear({ rows }: { rows: ListingRow[] }) {
           {maxY}
         </text>
         <text x={2} y={PAD + 4} fontSize="9" fill="currentColor" fillOpacity="0.5">
-          {Math.round(maxP)}€
+          ${Math.round(maxP)}
         </text>
         <text x={2} y={H - PAD} fontSize="9" fill="currentColor" fillOpacity="0.5">
           0
@@ -106,7 +106,7 @@ function PriceVsYear({ rows }: { rows: ListingRow[] }) {
             <circle
               key={i}
               cx={xScale(r.l.year!)}
-              cy={yScale(r.l.priceEur!)}
+              cy={yScale(r.l.priceUsd!)}
               r={radius}
               fill={colorBySource[r.l.source] ?? "#888"}
               fillOpacity={0.65}

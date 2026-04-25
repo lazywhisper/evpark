@@ -20,7 +20,7 @@ export function applyFilters(rows: ListingRow[], f: Filters): ListingRow[] {
     const score = r.s?.overallScore ?? 0;
     if (f.minScore != null && f.minScore > 0 && score < f.minScore) return false;
 
-    const price = r.l.priceEur ?? 0;
+    const price = r.l.priceUsd ?? 0;
     if (f.priceMin != null && price < f.priceMin) return false;
     if (f.priceMax != null && price > f.priceMax) return false;
 

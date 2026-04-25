@@ -178,7 +178,7 @@ function Card({ row }: { row: ListingRow }) {
           )}
         </div>
         <div className="text-right shrink-0">
-          {l.priceEur != null && <div className="text-lg font-semibold">~{l.priceEur} €</div>}
+          {l.priceUsd != null && <div className="text-lg font-semibold">${l.priceUsd}</div>}
           {l.priceRaw && <div className="text-xs text-muted-foreground">{l.priceRaw}</div>}
         </div>
       </div>

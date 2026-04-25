@@ -1,7 +1,9 @@
 import { XMLParser } from "fast-xml-parser";
 import { parse } from "node-html-parser";
 import { fetchWithRetry } from "../lib/http";
-import { extractPhone, extractVin, parsePrice, toEur } from "./normalize";
+import type { Rates } from "../lib/rates";
+import { toUsd } from "../lib/rates";
+import { extractPhone, extractVin, parsePrice } from "./normalize";
 import type { NormalizedListing, RawPhoto, ScanResult, SourceParser } from "./types";
 
 // abw.by — sitemap.xml содержит индекс sub-sitemap'ов;
@@ -28,7 +30,7 @@ async function listAdUrls(sitemapUrl: string): Promise<string[]> {
   return list.map((u) => u.loc).filter((u) => /\/cars\/\d+/.test(u));
 }
 
-async function fetchDetail(url: string): Promise<NormalizedListing | null> {
+async function fetchDetail(url: string, rates: Rates): Promise<NormalizedListing | null> {
   const res = await fetchWithRetry(url);
   if (!res.ok) return null;
   const html = await res.text();
@@ -40,7 +42,7 @@ async function fetchDetail(url: string): Promise<NormalizedListing | null> {
   const description = root.querySelector(".js-description, .description, [itemprop='description']")?.text?.trim() ?? null;
   const priceText = root.querySelector(".price, .ads-price, [itemprop='price']")?.text?.trim() ?? null;
   const parsed = parsePrice(priceText ?? "");
-  const priceEur = parsed ? toEur(parsed.value, parsed.currency) : null;
+  const priceUsd = parsed ? toUsd(parsed.value, parsed.currency, rates) : null;
 
   const specText = root.text;
   const yearMatch = specText.match(/\b(19|20)\d{2}\b/);
@@ -61,7 +63,7 @@ async function fetchDetail(url: string): Promise<NormalizedListing | null> {
     sourceId: idMatch[1]!,
     url,
     title: ogTitle,
-    priceEur,
+    priceUsd,
     priceRaw: priceText,
     currencyRaw: parsed?.currency ?? null,
     year,
@@ -79,7 +81,7 @@ async function fetchDetail(url: string): Promise<NormalizedListing | null> {
 
 export const abwParser: SourceParser = {
   source: "abw",
-  async scan({ cursor, mode }) {
+  async scan({ cursor, mode, rates }) {
     // ABW не поддерживает list-фильтр через JSON, поэтому в bootstrap-режиме
     // обходим sitemap и берём все BMW; в daily — только последние URL по дате.
     const sitemaps = await listSitemaps();
@@ -99,7 +101,7 @@ export const abwParser: SourceParser = {
     const listings: NormalizedListing[] = [];
     for (const u of candidates.slice(0, limit)) {
       try {
-        const l = await fetchDetail(u);
+        const l = await fetchDetail(u, rates);
         if (l) listings.push(l);
       } catch {
         // игнорируем единичные ошибки

@@ -1,5 +1,7 @@
 import { fetchWithRetry } from "../lib/http";
-import { extractVin, normalizePhoneBy, toEur } from "./normalize";
+import type { Rates } from "../lib/rates";
+import { toUsd } from "../lib/rates";
+import { extractVin, normalizePhoneBy } from "./normalize";
 import type {
   ListingDetail,
   NormalizedListing,
@@ -62,10 +64,10 @@ function nextCursor(
 
 export const onlinerParser: SourceParser = {
   source: "onliner",
-  async scan({ cursor, mode }) {
+  async scan({ cursor, mode, rates }) {
     const { gen, page } = parseCursor(cursor);
     const json = await fetchPage(gen, page);
-    const listings = (json.adverts ?? []).map(toNormalized);
+    const listings = (json.adverts ?? []).map((a) => toNormalized(a, rates));
     return { listings, nextCursor: nextCursor({ gen, page }, json, mode) } satisfies ScanResult;
   },
   async fetchDetail(sourceId): Promise<ListingDetail | null> {
@@ -113,11 +115,15 @@ type OnlinerDetail = {
   images?: Array<Record<string, string>>;
 };
 
-function toNormalized(a: OnlinerAdvert): NormalizedListing {
-  const eur = a.price?.converted?.EUR?.amount;
+function toNormalized(a: OnlinerAdvert, rates: Rates): NormalizedListing {
   const usd = a.price?.converted?.USD?.amount;
-  const priceEur =
-    eur != null ? Math.round(Number(eur)) : usd != null ? toEur(Number(usd), "USD") : null;
+  const byn = a.price?.converted?.BYN?.amount ?? a.price?.amount;
+  const priceUsd =
+    usd != null
+      ? Math.round(Number(usd))
+      : byn != null
+        ? toUsd(Number(byn), "BYN", rates)
+        : null;
 
   const photos: RawPhoto[] = (a.images ?? [])
     .map((img) => ({ url: img["lg@x2"] ?? img["lg@x1"] ?? img.original ?? "" }))
@@ -138,8 +144,8 @@ function toNormalized(a: OnlinerAdvert): NormalizedListing {
     sourceId: String(a.id),
     url: a.html_url ?? `https://ab.onliner.by/bmw/5-seriya/${a.id}`,
     title,
-    priceEur,
-    priceRaw: usd != null ? `${usd} USD` : eur != null ? `${eur} EUR` : null,
+    priceUsd,
+    priceRaw: usd != null ? `${usd} USD` : byn != null ? `${byn} BYN` : null,
     currencyRaw: a.price?.currency ?? null,
     year: a.specs?.year ?? null,
     mileageKm: a.specs?.odometer?.value ?? null,
