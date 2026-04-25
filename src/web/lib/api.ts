@@ -34,7 +34,18 @@ export type Scoring = {
   scoredAt: number;
 };
 
-export type ListingRow = { l: Listing; s: Scoring | null };
+export type ListingRow = { l: Listing; s: Scoring | null; thumbUrl: string | null };
+
+export type Photo = {
+  id: string;
+  listingId: string;
+  url: string;
+  r2Key: string | null;
+  phash: string | null;
+  width: number | null;
+  height: number | null;
+  orderIdx: number;
+};
 
 const base = "/api";
 
@@ -53,7 +64,9 @@ export async function fetchListings(minScore = 0, limit = 100) {
 }
 
 export async function fetchListing(id: string) {
-  return jsonFetch<{ listing: Listing; scoring: Scoring | null }>(`/listings/${id}`);
+  return jsonFetch<{ listing: Listing; scoring: Scoring | null; photos: Photo[] }>(
+    `/listings/${id}`,
+  );
 }
 
 export type Notification = {

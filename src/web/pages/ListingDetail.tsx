@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import { useParams } from "wouter";
-import { fetchListing, type Listing, type Scoring } from "@/lib/api";
+import { fetchListing, type Listing, type Photo, type Scoring } from "@/lib/api";
 import { Layout } from "@/components/Layout";
 
 export default function ListingDetail() {
   const params = useParams<{ id: string }>();
-  const [data, setData] = useState<{ listing: Listing; scoring: Scoring | null } | null>(null);
+  const [data, setData] = useState<{
+    listing: Listing;
+    scoring: Scoring | null;
+    photos: Photo[];
+  } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -18,7 +22,7 @@ export default function ListingDetail() {
   if (err) return <Layout><p className="text-destructive">{err}</p></Layout>;
   if (!data) return <Layout><p className="text-muted-foreground">Загрузка...</p></Layout>;
 
-  const { listing: l, scoring: s } = data;
+  const { listing: l, scoring: s, photos } = data;
 
   return (
     <Layout>
@@ -32,6 +36,24 @@ export default function ListingDetail() {
         {l.region && <span>{l.region}</span>}
         {l.priceEur != null && <span className="text-foreground font-medium">~{l.priceEur} €</span>}
       </div>
+
+      {photos.length > 0 && (
+        <section className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {photos.slice(0, 12).map((p) => (
+            <a key={p.id} href={p.url} target="_blank" rel="noreferrer" className="block">
+              <img
+                src={p.url}
+                alt=""
+                loading="lazy"
+                className="w-full aspect-[4/3] object-cover rounded bg-muted hover:opacity-80 transition-opacity"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
+                }}
+              />
+            </a>
+          ))}
+        </section>
+      )}
 
       {s && (
         <section className="mt-6 bg-card border border-border rounded-lg p-4">

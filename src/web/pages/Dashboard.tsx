@@ -71,13 +71,26 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="grid gap-3">
-          {rows.map(({ l, s }) => (
+          {rows.map(({ l, s, thumbUrl }) => (
             <Link
               key={l.id}
               href={`/listings/${l.id}`}
               className="block bg-card border border-border rounded-lg p-4 hover:border-primary transition-colors"
             >
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                {thumbUrl ? (
+                  <img
+                    src={thumbUrl}
+                    alt=""
+                    loading="lazy"
+                    className="w-32 h-24 sm:w-40 sm:h-28 rounded object-cover bg-muted shrink-0"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
+                    }}
+                  />
+                ) : (
+                  <div className="w-32 h-24 sm:w-40 sm:h-28 rounded bg-muted shrink-0" />
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs text-muted-foreground">{SOURCE_LABEL[l.source]}</span>

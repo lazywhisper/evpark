@@ -10,7 +10,7 @@ import type {
 
 import { createAuth } from "./auth";
 import { db } from "./database";
-import { fetchRuns, listings, notificationsLog, scoring } from "./database/schema";
+import { fetchRuns, listings, notificationsLog, photos, scoring } from "./database/schema";
 import type {
   AppContext,
   Env,
@@ -43,9 +43,10 @@ app.get("/listings", async (c) => {
   const limit = Math.min(Number(c.req.query("limit") ?? 50), 200);
   const minScore = Number(c.req.query("minScore") ?? 0);
   const rows = await d
-    .select({ l: listings, s: scoring })
+    .select({ l: listings, s: scoring, thumbUrl: photos.url })
     .from(listings)
     .leftJoin(scoring, eq(scoring.listingId, listings.id))
+    .leftJoin(photos, and(eq(photos.listingId, listings.id), eq(photos.orderIdx, 0)))
     .orderBy(desc(scoring.overallScore), desc(listings.firstSeenAt))
     .limit(limit);
   const filtered = minScore > 0 ? rows.filter((r) => (r.s?.overallScore ?? 0) >= minScore) : rows;
@@ -58,7 +59,12 @@ app.get("/listings/:id", async (c) => {
   const lst = (await d.select().from(listings).where(eq(listings.id, id)).limit(1))[0];
   if (!lst) return c.json({ error: "not found" }, 404);
   const sc = (await d.select().from(scoring).where(eq(scoring.listingId, id)).limit(1))[0] ?? null;
-  return c.json({ listing: lst, scoring: sc });
+  const ph = await d
+    .select()
+    .from(photos)
+    .where(eq(photos.listingId, id))
+    .orderBy(photos.orderIdx);
+  return c.json({ listing: lst, scoring: sc, photos: ph });
 });
 
 app.get("/notifications", async (c) => {
