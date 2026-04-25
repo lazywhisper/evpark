@@ -15,6 +15,7 @@ const HELP = `Привет! Я ищу BMW E39 facelift на av.by, onliner.by, a
 /resume — снять с паузы
 /stats — статистика за неделю
 /bootstrap_av — обход только av.by (быстрее)
+/rescore — перезапустить анализ для объявлений без текста
 /reset — очистить базу и начать сначала (только для владельца)
 /help — эта справка`;
 
@@ -61,6 +62,19 @@ export async function handleCommand(env: Env, d: DB, chatId: string, username: s
     case "/bootstrap_av": {
       await env.QUEUE_FETCH.send({ kind: "scan", source: "av", mode: "bootstrap" });
       await sendMessage(env, chatId, "Запустил bootstrap только av.by (~600 объявлений).");
+      return;
+    }
+    case "/rescore": {
+      // Ставим в очередь все listing'и у которых нет описания или нет textFindings
+      const toRescore = await d
+        .select({ id: listings.id })
+        .from(listings)
+        .leftJoin(scoring, eq(scoring.listingId, listings.id))
+        .where(sql`(${listings.description} IS NULL OR ${listings.description} = '') OR ${scoring.textFindingsJson} IS NULL`);
+      for (const r of toRescore) {
+        await env.QUEUE_SCORE.send({ listingId: r.id });
+      }
+      await sendMessage(env, chatId, `Поставил в очередь ${toRescore.length} объявлений для повторного анализа.`);
       return;
     }
     case "/bootstrap": {

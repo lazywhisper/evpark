@@ -129,18 +129,13 @@ export const kufarParser: SourceParser = {
       // Fallback: парсим HTML-страницу напрямую если __NEXT_DATA__ не дал описания
       if (!description) {
         const root = parse(html);
-        const selectors = [
-          "[data-name='AdDescription']",
-          ".styles_description__",
-          ".advert-description",
-          "[class*='description']",
-        ];
-        for (const sel of selectors) {
-          const el = root.querySelector(sel);
-          if (el) {
-            const text = el.text.replace(/\s+/g, " ").trim();
-            if (text.length > 20) { description = text; break; }
-          }
+        const el =
+          root.querySelector("[itemprop='description']") ??
+          root.querySelector("[data-name='AdDescription']") ??
+          root.querySelector("[class*='description_content']");
+        if (el) {
+          const text = el.text.replace(/\s+/g, " ").trim();
+          if (text.length > 20) description = text;
         }
       }
 

@@ -47,6 +47,10 @@ export async function processScoreMessage(env: Env, d: DB, msg: ScoreListingMess
           if (detail.region && !lstEarly.region) updates.region = detail.region;
           if (Object.keys(updates).length > 0) {
             await d.update(listings).set(updates).where(eq(listings.id, listingId));
+            // Описание обновилось — удаляем старый скор чтобы text analysis перезапустился
+            if (updates.description) {
+              await d.delete(scoring).where(eq(scoring.listingId, listingId));
+            }
           }
           // Доливаем фото если их меньше 3
           if (detail.extraPhotos.length > 0) {
